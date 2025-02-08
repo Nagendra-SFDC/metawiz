@@ -30,16 +30,20 @@ jobs:
                 sfdx plugins
 
           - name: 'Revert Last Commit and Push'
-            run: |
-                LAST_COMMIT=$(git log --pretty=format:'%H' -n 1)
-                if [ $(git rev-list --parents -n 1 $LAST_COMMIT | wc -w) -gt 2 ]; then
-                    echo "Merge commit detected. Using -m 1 option."
-                    git revert -m 1 HEAD --no-edit
-                else
-                    echo "Regular commit detected. Reverting normally."
-                    git revert HEAD --no-edit
-                fi
-                git push origin main || echo "No changes to push, continuing..."
+  run: |
+      git config --global user.email "nagendra@omniflexconsulting.com"
+      git config --global user.name "nagendra@omniflexconsulting.com.sdocs"
+      
+      LAST_COMMIT=$(git log --pretty=format:'%H' -n 1)
+      if [ $(git rev-list --parents -n 1 $LAST_COMMIT | wc -w) -gt 2 ]; then
+          echo "Merge commit detected. Using -m 1 option."
+          git revert -m 1 HEAD --no-edit
+      else
+          echo "Regular commit detected. Reverting normally."
+          git revert HEAD --no-edit
+      fi
+      git push origin main || echo "No changes to push, continuing..."
+
 
           - name: 'Create delta packages'
             run: | 
