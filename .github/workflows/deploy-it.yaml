@@ -51,4 +51,4 @@ jobs:
                     echo "[WARNING] No delta changes found. Deploying full source..."
                     sf project deploy start --source-dir force-app --test-level RunLocalTests
                 fi
-        
+

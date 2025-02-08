@@ -8,5 +8,6 @@
   "name": "metawiz CICD",
   "namespace": "",
   "sfdcLoginUrl": "https://login.salesforce.com",
-  "sourceApiVersion": "62.0"
+  "sourceApiVersion": "62.0",
+  "oauthLocalPort": 1719
 }
