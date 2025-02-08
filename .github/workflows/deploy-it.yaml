@@ -31,7 +31,14 @@ jobs:
 
           - name: 'Revert Last Commit and Push'
             run: |
-                git revert HEAD --no-edit
+                LAST_COMMIT=$(git log --pretty=format:'%H' -n 1)
+                if [ $(git rev-list --parents -n 1 $LAST_COMMIT | wc -w) -gt 2 ]; then
+                    echo "Merge commit detected. Using -m 1 option."
+                    git revert -m 1 HEAD --no-edit
+                else
+                    echo "Regular commit detected. Reverting normally."
+                    git revert HEAD --no-edit
+                fi
                 git push origin main || echo "No changes to push, continuing..."
 
           - name: 'Create delta packages'
@@ -39,18 +46,15 @@ jobs:
                 mkdir -p changed-sources/force-app
                 sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --include-deleted --generate-delta --source force-app/ || echo "No changes detected, skipping delta deployment."
 
-             
-- name: 'Revert Last Commit and Push'
-  run: |
-      LAST_COMMIT=$(git log --pretty=format:'%H' -n 1)
-      if [ $(git rev-list --parents -n 1 $LAST_COMMIT | wc -w) -gt 2 ]; then
-          echo "Merge commit detected. Using -m 1 option."
-          git revert -m 1 HEAD --no-edit
-      else
-          echo "Regular commit detected. Reverting normally."
-          git revert HEAD --no-edit
-      fi
-      git push origin main || echo "No changes to push, continuing..."
-
-
-
+          - name: 'Deploy to environment with local tests'
+            run: |        
+                echo "${{ vars.JWT_SERVER_KEY }}" > server.key
+                sf org login jwt --username ${{ vars.DEPLOYMENT_USER_NAME }} --jwt-key-file server.key --client-id ${{ vars.CONSUMER_KEY }} --instance-url ${{ vars.INSTANCE_URL }} --set-default
+                
+                if [ -d "changed-sources/force-app" ] && [ "$(ls -A changed-sources/force-app 2>/dev/null)" ]; then
+                    echo "[INFO] Deploying delta changes..."
+                    sf project deploy start --source-dir changed-sources/force-app --test-level RunLocalTests
+                else
+                    echo "[WARNING] No delta changes found. Deploying full source..."
+                    sf project deploy start --source-dir force-app --test-level RunLocalTests
+                fi
