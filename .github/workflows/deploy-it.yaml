@@ -14,27 +14,40 @@ jobs:
           - uses: actions/setup-node@v3
             with:
               node-version: '18'
+              
           - name: 'Checkout source code'
             uses: actions/checkout@v3
             with:
               fetch-depth: '2'
-                
-          # Now Install Salesforce CLI
+
+          # Install Salesforce CLI
           - name: 'Install sfdx'
             run: npm install @salesforce/cli --global
+            
           - name: 'Installing sfdx git delta'
             run: | 
                 echo Y | sfdx plugins:install sfdx-git-delta
                 sfdx plugins
 
+          - name: 'Revert Last Commit and Push'
+            run: |
+                git revert HEAD --no-edit
+                git push origin main || echo "No changes to push, continuing..."
+
           - name: 'Create delta packages'
             run: | 
-                mkdir changed-sources
-                sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/
-                echo "[INFO] Diff generated"
-                
-          - name: 'Deploy to environment with running all local tests'
-            run: |
+                mkdir -p changed-sources/force-app
+                sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --include-deleted --generate-delta --source force-app/ || echo "No changes detected, skipping delta deployment."
+
+          - name: 'Deploy to environment with local tests'
+            run: |        
                 echo "${{ vars.JWT_SERVER_KEY }}" > server.key
                 sf org login jwt --username ${{ vars.DEPLOYMENT_USER_NAME }} --jwt-key-file server.key --client-id ${{ vars.CONSUMER_KEY }} --instance-url ${{ vars.INSTANCE_URL }} --set-default
-                sf project deploy start --source-dir changed-sources/force-app --test-level RunLocalTests
+                
+                if [ -d "changed-sources/force-app" ] && [ "$(ls -A changed-sources/force-app 2>/dev/null)" ]; then
+                    echo "[INFO] Deploying delta changes..."
+                    sf project deploy start --source-dir changed-sources/force-app --test-level RunLocalTests
+                else
+                    echo "[WARNING] No delta changes found. Deploying full source..."
+                    sf project deploy start --source-dir force-app --test-level RunLocalTests
+                fi
