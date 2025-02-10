@@ -47,11 +47,23 @@ jobs:
 
       - name: 'Backup Current Deployment Before Deploying'
         run: |
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          ROLLBACK_BRANCH="rollback-$TIMESTAMP"
-          git checkout -b $ROLLBACK_BRANCH
-          git push origin $ROLLBACK_BRANCH
-          echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
+           TIMESTAMP=$(date +%Y%m%d%H%M%S)
+           ROLLBACK_BRANCH="rollback-$TIMESTAMP"
+
+      # Configure GitHub authentication
+            git config --global user.email "github-actions@github.com"
+          git config --global user.name "github-actions"
+
+      # Ensure we are on the main branch before creating a rollback branch
+      git checkout main
+
+      # Create rollback branch
+      git checkout -b $ROLLBACK_BRANCH
+
+      # Push with authentication
+      git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $ROLLBACK_BRANCH
+      
+      echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
 
       - name: 'Deploy to environment with local tests'
         run: |
