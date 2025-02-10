@@ -83,12 +83,17 @@ jobs:
             echo "[INFO] No metadata deletions detected."
           fi
 
+      - name: 'Authenticate Salesforce'
+        run: |
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
+
       - name: 'Deploy Destructive Changes (Deletes)'
         if: success()
         run: |
           if [ -f "destructive-changes/destructiveChanges.xml" ]; then
             echo "[INFO] Deploying deletions..."
-            sf project deploy start --manifest destructive-changes/destructiveChanges.xml --test-level NoTestRun
+            sf project deploy start --manifest destructive-changes/destructiveChanges.xml --target-org ${{ secrets.DEPLOYMENT_USER_NAME }} --test-level NoTestRun
           else
             echo "[INFO] No deletions to deploy."
           fi
@@ -99,20 +104,15 @@ jobs:
           sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/main/default/
           echo "[INFO] Diff generated"
 
-      - name: 'Authenticate Salesforce'
-        run: |
-          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
-
       - name: 'Deploy to environment with local tests'
         run: |
           # Ensure changed-sources has content
           if [ -d "changed-sources/force-app/main/default" ] && [ "$(ls -A changed-sources/force-app/main/default 2>/dev/null)" ]; then
               echo "[INFO] Deploying delta changes..."
-              sf project deploy start --source-dir changed-sources/force-app/main/default --test-level RunLocalTests
+              sf project deploy start --source-dir changed-sources/force-app/main/default --target-org ${{ secrets.DEPLOYMENT_USER_NAME }} --test-level RunLocalTests
           else
               echo "[WARNING] No delta changes found. Deploying full source from force-app/..."
-              sf project deploy start --source-dir force-app/ --test-level RunLocalTests
+              sf project deploy start --source-dir force-app/ --target-org ${{ secrets.DEPLOYMENT_USER_NAME }} --test-level RunLocalTests
           fi
 
   Rollback-Deployment:
@@ -142,5 +142,5 @@ jobs:
       - name: 'Rollback Deployment'
         run: |
           echo "[INFO] Rolling back to previous deployment..."
-          sf project deploy start --source-dir force-app/main/default/ --test-level RunLocalTests
+          sf project deploy start --source-dir force-app/main/default/ --target-org ${{ secrets.DEPLOYMENT_USER_NAME }} --test-level RunLocalTests
           echo "[INFO] Rollback complete."
