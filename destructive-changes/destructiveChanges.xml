@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://soap.sforce.com/2006/04/metadata http://soap.sforce.com/2006/04/metadata.xsd">
+    <types>
+        <members>AAATest</members>
+        <name>ApexClass</name>
+    </types>
+    <version>57.0</version>
+</Package>
