@@ -64,25 +64,25 @@ jobs:
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $ROLLBACK_BRANCH
           
           echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
-          
-          - name: 'Debug Directory Structure Before Deployment'
-  run: |
-    echo "[INFO] Listing contents of changed-sources/"
-    ls -R changed-sources/ || echo "[WARNING] No files found in changed-sources/"
 
-    echo "[INFO] Listing contents of CICD/"
-    ls -R CICD/
+      - name: 'Debug Directory Structure Before Deployment'
+        run: |
+          echo "[INFO] Listing contents of changed-sources/"
+          ls -R changed-sources/ || echo "[WARNING] No files found in changed-sources/"
 
-    - name: 'Deploy to environment with local tests'
-  run: |
-    # Ensure changed-sources has content
-    if [ -d "changed-sources/force-app/main/default" ] && [ "$(ls -A changed-sources/force-app/main/default 2>/dev/null)" ]; then
-        echo "[INFO] Deploying delta changes..."
-        sf project deploy start --source-dir changed-sources/force-app/main/default --test-level RunLocalTests
-    else
-        echo "[WARNING] No delta changes found. Deploying full source from CICD/..."
-        sf project deploy start --source-dir CICD/ --test-level RunLocalTests
-    fi
+          echo "[INFO] Listing contents of CICD/"
+          ls -R CICD/
+
+      - name: 'Deploy to environment with local tests'
+        run: |
+          # Ensure changed-sources has content
+          if [ -d "changed-sources/force-app/main/default" ] && [ "$(ls -A changed-sources/force-app/main/default 2>/dev/null)" ]; then
+              echo "[INFO] Deploying delta changes..."
+              sf project deploy start --source-dir changed-sources/force-app/main/default --test-level RunLocalTests
+          else
+              echo "[WARNING] No delta changes found. Deploying full source from CICD/..."
+              sf project deploy start --source-dir CICD/ --test-level RunLocalTests
+          fi
 
   Rollback-Deployment:
     if: github.event.inputs.rollback == 'true'
