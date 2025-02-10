@@ -47,23 +47,23 @@ jobs:
 
       - name: 'Backup Current Deployment Before Deploying'
         run: |
-           TIMESTAMP=$(date +%Y%m%d%H%M%S)
-           ROLLBACK_BRANCH="rollback-$TIMESTAMP"
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          ROLLBACK_BRANCH="rollback-$TIMESTAMP"
 
-      # Configure GitHub authentication
-            git config --global user.email "github-actions@github.com"
+          # Configure GitHub authentication
+          git config --global user.email "github-actions@github.com"
           git config --global user.name "github-actions"
 
-      # Ensure we are on the main branch before creating a rollback branch
-      git checkout main
+          # Ensure we are on the main branch before creating a rollback branch
+          git checkout main
 
-      # Create rollback branch
-      git checkout -b $ROLLBACK_BRANCH
+          # Create rollback branch
+          git checkout -b $ROLLBACK_BRANCH
 
-      # Push with authentication
-      git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $ROLLBACK_BRANCH
-      
-      echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
+          # Push with authentication
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $ROLLBACK_BRANCH
+          
+          echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
 
       - name: 'Deploy to environment with local tests'
         run: |
@@ -83,8 +83,16 @@ jobs:
       - name: 'Checkout rollback branch'
         uses: actions/checkout@v3
         with:
-          ref: rollback-previous
           fetch-depth: 2
+
+      - name: 'Find latest rollback branch'
+        run: |
+          LATEST_ROLLBACK_BRANCH=$(git branch -r | grep 'rollback-' | sort | tail -n 1 | sed 's/origin\///')
+          echo "LATEST_ROLLBACK_BRANCH=$LATEST_ROLLBACK_BRANCH" >> $GITHUB_ENV
+
+      - name: 'Switch to latest rollback branch'
+        run: |
+          git checkout $LATEST_ROLLBACK_BRANCH
 
       - name: 'Authenticate Salesforce for Rollback'
         run: |
