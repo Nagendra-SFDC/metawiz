@@ -9,7 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: sffnoobs
     steps:
-      - uses: actions/setup-node@v3
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
 
@@ -22,22 +23,27 @@ jobs:
         run: npm install @salesforce/cli --global
 
       - name: 'Install sfdx git delta'
-        run: | 
+        run: |
           echo Y | sfdx plugins:install sfdx-git-delta
           sfdx plugins
 
       - name: 'Create delta packages'
         run: | 
           mkdir -p changed-sources
-          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source CICD/force-app/
+          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source CICD/force-app/main/default/
           echo "[INFO] Diff generated"
+
+      - name: 'Authenticate Salesforce'
+        run: |
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt --username ${{ secrets.DEPLOYMENT_USER_NAME }} --jwt-key-file server.key --client-id ${{ secrets.CONSUMER_KEY }} --instance-url ${{ secrets.INSTANCE_URL }} --set-default
 
       - name: 'Deploy to environment with local tests'
         run: |
-          echo "${{ secrets.JWT_SERVER_KEY }}" > server.key
-          sf org login jwt --username ${{ secrets.DEPLOYMENT_USER_NAME }} --jwt-key-file server.key --client-id ${{ secrets.CONSUMER_KEY }} --instance-url ${{ vars.INSTANCE_URL }} --set-default
-          if [ -d "changed-sources/force-app" ] && [ "$(ls -A changed-sources/force-app 2>/dev/null)" ]; then
-              sf project deploy start --source-dir changed-sources/force-app --test-level RunLocalTests
+          if [ -d "changed-sources/force-app/main/default/" ] && [ "$(ls -A changed-sources/force-app/main/default/ 2>/dev/null)" ]; then
+              echo "[INFO] Deploying delta changes..."
+              sf project deploy start --source-dir changed-sources/force-app/main/default/ --test-level RunLocalTests
           else
-              echo "[WARNING] No delta changes found. Skipping deployment."
+              echo "[WARNING] No delta changes found. Deploying full source..."
+              sf project deploy start --source-dir CICD/force-app/main/default/ --test-level RunLocalTests
           fi
