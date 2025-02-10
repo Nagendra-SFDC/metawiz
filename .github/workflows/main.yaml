@@ -29,7 +29,7 @@ jobs:
       - name: 'Create delta packages'
         run: | 
           mkdir -p changed-sources
-          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/
+          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source CICD/force-app/
           echo "[INFO] Diff generated"
 
       - name: 'Deploy to environment with local tests'
