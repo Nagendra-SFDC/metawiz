@@ -8,72 +8,33 @@ on:
 
 jobs:
   Deploy-to-sffnoobs-environment:
-    runs-on: ubuntu-latest
-    environment: sffnoobs
-    steps:
-      - name: 'Setup Node.js'
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
+      runs-on: ubuntu-latest
+      environment: sffnoobs
+      steps:
+          - uses: actions/setup-node@v3
+            with:
+              node-version: '18'
+          - name: 'Checkout source code'
+            uses: actions/checkout@v3
+            with:
+              fetch-depth: '2'
+                
+          # Now Install Salesforce CLI
+          - name: 'Install sfdx'
+            run: npm install @salesforce/cli --global
+          - name: 'Installing sfdx git delta'
+            run: | 
+                echo Y | sfdx plugins:install sfdx-git-delta
+                sfdx plugins
 
-      - name: 'Checkout source code'
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 2
-
-      # Install Salesforce CLI
-      - name: 'Install Salesforce CLI'
-        run: npm install @salesforce/cli --global
-
-      - name: 'Install sfdx git delta'
-        run: |
-          echo Y | sfdx plugins:install sfdx-git-delta
-          sfdx plugins
-
-      # Backup current state before deployment
-      - name: 'Backup Current Metadata'
-        run: |
-          mkdir -p metadata-backup
-          sfdx force:mdapi:retrieve -r metadata-backup -u ${{ vars.DEPLOYMENT_USER_NAME }}
-          zip -r metadata-backup.zip metadata-backup
-          git add metadata-backup.zip
-          git commit -m "Backup before deployment"
-          git push origin main
-
-      - name: 'Create delta packages'
-        run: | 
-          mkdir -p changed-sources/force-app
-          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --include-deleted --generate-delta --source force-app/ || echo "No changes detected, skipping delta deployment."
-
-      - name: 'Authenticate Salesforce'
-        run: |
-          echo "${{ vars.JWT_SERVER_KEY }}" > server.key
-          sf org login jwt --username ${{ vars.DEPLOYMENT_USER_NAME }} --jwt-key-file server.key --client-id ${{ vars.CONSUMER_KEY }} --instance-url ${{ vars.INSTANCE_URL }} --set-default
-
-      - name: 'Deploy to environment with local tests'
-        id: deploy
-        run: |
-          if [ -d "changed-sources/force-app" ] && [ "$(ls -A changed-sources/force-app 2>/dev/null)" ]; then
-              echo "[INFO] Deploying delta changes..."
-              sf project deploy start --source-dir changed-sources/force-app --test-level RunLocalTests || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
-          else
-              echo "[WARNING] No delta changes found. Deploying full source..."
-              sf project deploy start --source-dir force-app --test-level RunLocalTests || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
-          fi
-
-      - name: 'Rollback on Failure'
-        if: env.DEPLOY_FAILED == 'true'
-        run: |
-          echo "[ERROR] Deployment failed. Rolling back..."
-          git reset --hard HEAD~1
-          git push --force origin main
-          unzip metadata-backup.zip -d rollback
-          sf project deploy start --source-dir rollback/metadata-backup --test-level RunLocalTests
-
-      - name: 'Notify Deployment Status'
-        run: |
-          if [ -z "$DEPLOY_FAILED" ]; then
-            echo "✅ Deployment Successful"
-          else
-            echo "❌ Deployment Failed. Rollback Completed."
-          fi
+          - name: 'Create delta packages'
+            run: | 
+                mkdir changed-sources
+                sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/
+                echo "[INFO] Diff generated"
+                
+          - name: 'Deploy to environment with running all local tests'
+            run: |
+                echo "${{ secrets.JWT_SERVER_KEY }}" > server.key
+                sf org login jwt --username ${{ secrets.DEPLOYMENT_USER_NAME }} --jwt-key-file server.key --client-id ${{ secrets.CONSUMER_KEY }} --instance-url ${{ vars.INSTANCE_URL }} --set-default
+                sf project deploy start --source-dir changed-sources/force-app --test-level RunLocalTests
