@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   
-  workflow_dispatch:
+  workflow_dispatch:  # Allows manual rollback trigger
     inputs:
       rollback:
         description: "Rollback to previous version"
@@ -16,61 +16,72 @@ jobs:
     runs-on: ubuntu-latest
     environment: sffnoobs
     steps:
-      - name: 'Checkout source code'
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 2
-
       - name: 'Setup Node.js'
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
+      - name: 'Checkout source code'
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
       - name: 'Install Salesforce CLI'
-        run: npm install -g @salesforce/cli
+        run: npm install @salesforce/cli --global
 
       - name: 'Install sfdx git delta'
         run: |
           echo Y | sfdx plugins:install sfdx-git-delta
           sfdx plugins
 
-      - name: 'Backup Before Merging'
+      - name: 'Backup Current Deployment Before Deploying'
         run: |
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           ROLLBACK_BRANCH="rollback-$TIMESTAMP"
 
+          # Configure GitHub authentication
           git config --global user.email "github-actions@github.com"
           git config --global user.name "github-actions"
 
+          # Ensure we are on the main branch before creating a rollback branch
           git checkout main
+
+          # Create rollback branch
           git checkout -b $ROLLBACK_BRANCH
+
+          # Push rollback branch
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $ROLLBACK_BRANCH
           
           echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
-
-      - name: 'Create delta packages'
-        run: | 
-          mkdir -p changed-sources
-          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/main/default/
-          echo "[INFO] Diff generated"
 
       - name: 'Generate Destructive Changes'
         run: |
           mkdir -p destructive-changes
 
-          sf sgd source delta --to "HEAD" --from "HEAD~1" --output destructive-changes/ --include-deleted
+          # Identify deleted metadata files
+          git diff --name-status HEAD~1 HEAD | grep '^D' | awk '{print $2}' > destructive-changes/deleted_files.txt || echo "No deleted files detected"
 
-          if [ -f "destructive-changes/package.xml" ]; then
-            mv destructive-changes/package.xml destructive-changes/destructiveChanges.xml
-            echo "[INFO] Destructive changes detected."
+          if [ -s destructive-changes/deleted_files.txt ]; then
+            echo "[INFO] Deleted metadata detected. Generating destructiveChanges.xml..."
+            
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > destructive-changes/destructiveChanges.xml
+            echo '<Package xmlns="http://soap.sforce.com/2006/04/metadata">' >> destructive-changes/destructiveChanges.xml
+            
+            while read FILE; do
+              METADATA_TYPE=$(echo "$FILE" | awk -F'/' '{print $(NF-1)}')
+              COMPONENT_NAME=$(basename "$FILE" | sed 's/\..*//')
+
+              echo "  <types>" >> destructive-changes/destructiveChanges.xml
+              echo "    <members>$COMPONENT_NAME</members>" >> destructive-changes/destructiveChanges.xml
+              echo "    <name>$METADATA_TYPE</name>" >> destructive-changes/destructiveChanges.xml
+              echo "  </types>" >> destructive-changes/destructiveChanges.xml
+            done < destructive-changes/deleted_files.txt
+
+            echo "  <version>57.0</version>" >> destructive-changes/destructiveChanges.xml
+            echo "</Package>" >> destructive-changes/destructiveChanges.xml
           else
-            echo "[WARNING] No destructive changes detected."
+            echo "[INFO] No metadata deletions detected."
           fi
-
-      - name: 'Authenticate Salesforce'
-        run: |
-          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
 
       - name: 'Deploy Destructive Changes (Deletes)'
         if: success()
@@ -82,14 +93,25 @@ jobs:
             echo "[INFO] No deletions to deploy."
           fi
 
-      - name: 'Deploy Additions/Modifications'
-        if: success()
+      - name: 'Create delta packages'
+        run: | 
+          mkdir -p changed-sources
+          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/main/default/
+          echo "[INFO] Diff generated"
+
+      - name: 'Authenticate Salesforce'
         run: |
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
+
+      - name: 'Deploy to environment with local tests'
+        run: |
+          # Ensure changed-sources has content
           if [ -d "changed-sources/force-app/main/default" ] && [ "$(ls -A changed-sources/force-app/main/default 2>/dev/null)" ]; then
               echo "[INFO] Deploying delta changes..."
               sf project deploy start --source-dir changed-sources/force-app/main/default --test-level RunLocalTests
           else
-              echo "[WARNING] No delta changes found. Deploying full source..."
+              echo "[WARNING] No delta changes found. Deploying full source from force-app/..."
               sf project deploy start --source-dir force-app/ --test-level RunLocalTests
           fi
 
@@ -105,17 +127,11 @@ jobs:
 
       - name: 'Find latest rollback branch'
         run: |
-          LATEST_ROLLBACK_BRANCH=$(git ls-remote --heads origin | awk -F'/' '{print $3}' | grep 'rollback-' | sort | tail -n 1)
-          if [ -z "$LATEST_ROLLBACK_BRANCH" ]; then
-            echo "No rollback branch found!"
-            exit 1
-          fi
+          LATEST_ROLLBACK_BRANCH=$(git branch -r | grep 'rollback-' | sort | tail -n 1 | sed 's/origin\///')
           echo "LATEST_ROLLBACK_BRANCH=$LATEST_ROLLBACK_BRANCH" >> $GITHUB_ENV
-          echo "[INFO] Found rollback branch: $LATEST_ROLLBACK_BRANCH"
 
       - name: 'Switch to latest rollback branch'
         run: |
-          git fetch origin
           git checkout $LATEST_ROLLBACK_BRANCH
 
       - name: 'Authenticate Salesforce for Rollback'
@@ -123,7 +139,7 @@ jobs:
           echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
           sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
 
-      - name: 'Rollback Deployment (Including Deletions)'
+      - name: 'Rollback Deployment'
         run: |
           echo "[INFO] Rolling back to previous deployment..."
           sf project deploy start --source-dir force-app/main/default/ --test-level RunLocalTests
