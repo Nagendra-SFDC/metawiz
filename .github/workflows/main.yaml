@@ -3,6 +3,13 @@ name: Deploy to sffnoobs environment on push to main
 on:
   push:
     branches: [ main ]
+  
+  workflow_dispatch:  # Allows manual rollback trigger
+    inputs:
+      rollback:
+        description: "Rollback to previous version"
+        required: false
+        default: "false"
 
 jobs:
   Deploy-to-sffnoobs-environment:
@@ -36,7 +43,15 @@ jobs:
       - name: 'Authenticate Salesforce'
         run: |
           echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt --username ${{ secrets.DEPLOYMENT_USER_NAME }} --jwt-key-file server.key --client-id ${{ secrets.CONSUMER_KEY }} --instance-url ${{ secrets.INSTANCE_URL }} --set-default
+          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
+
+      - name: 'Backup Current Deployment Before Deploying'
+        run: |
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          ROLLBACK_BRANCH="rollback-$TIMESTAMP"
+          git checkout -b $ROLLBACK_BRANCH
+          git push origin $ROLLBACK_BRANCH
+          echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
 
       - name: 'Deploy to environment with local tests'
         run: |
@@ -47,3 +62,25 @@ jobs:
               echo "[WARNING] No delta changes found. Deploying full source..."
               sf project deploy start --source-dir CICD/force-app/main/default/ --test-level RunLocalTests
           fi
+
+  Rollback-Deployment:
+    if: github.event.inputs.rollback == 'true'
+    needs: [Deploy-to-sffnoobs-environment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout rollback branch'
+        uses: actions/checkout@v3
+        with:
+          ref: rollback-previous
+          fetch-depth: 2
+
+      - name: 'Authenticate Salesforce for Rollback'
+        run: |
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
+
+      - name: 'Rollback Deployment'
+        run: |
+          echo "[INFO] Rolling back to previous deployment..."
+          sf project deploy start --source-dir CICD/force-app/main/default/ --test-level RunLocalTests
+          echo "[INFO] Rollback complete."
