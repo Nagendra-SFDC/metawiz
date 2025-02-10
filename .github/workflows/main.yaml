@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   
-  workflow_dispatch:  # Allows manual rollback trigger
+  workflow_dispatch:
     inputs:
       rollback:
         description: "Rollback to previous version"
@@ -39,17 +39,11 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           ROLLBACK_BRANCH="rollback-$TIMESTAMP"
 
-          # Configure GitHub authentication
           git config --global user.email "github-actions@github.com"
           git config --global user.name "github-actions"
 
-          # Ensure we are on the main branch
           git checkout main
-
-          # Create rollback branch
           git checkout -b $ROLLBACK_BRANCH
-
-          # Push the rollback branch
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $ROLLBACK_BRANCH
           
           echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
@@ -60,20 +54,41 @@ jobs:
           sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/main/default/
           echo "[INFO] Diff generated"
 
+      - name: 'Generate Destructive Changes Manifest'
+        run: |
+          mkdir -p destructive-changes
+          sf sgd source delta --to "HEAD" --from "HEAD~1" --output destructive-changes/ --generate-delta --source force-app/main/default/ --format xml
+          
+          if [ -f "destructive-changes/destructiveChanges.xml" ]; then
+            echo "[INFO] Detected deletions in destructiveChanges.xml"
+          else
+            echo "[WARNING] No destructive changes detected."
+          fi
+
       - name: 'Authenticate Salesforce'
         run: |
           echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
           sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
 
-      - name: 'Deploy to environment with local tests (Including Deletions)'
+      - name: 'Deploy Destructive Changes (Delete Removed Metadata)'
+        if: success()
         run: |
-          # Ensure changed-sources has content
+          if [ -f "destructive-changes/destructiveChanges.xml" ]; then
+            echo "[INFO] Deploying destructive changes..."
+            sf project deploy start --manifest destructive-changes/destructiveChanges.xml --test-level NoTestRun
+          else
+            echo "[INFO] No destructive changes to deploy."
+          fi
+
+      - name: 'Deploy Additions/Modifications'
+        if: success()
+        run: |
           if [ -d "changed-sources/force-app/main/default" ] && [ "$(ls -A changed-sources/force-app/main/default 2>/dev/null)" ]; then
-              echo "[INFO] Deploying delta changes including deletions..."
-              sf project deploy start --source-dir changed-sources/force-app/main/default --test-level RunLocalTests --purge-on-delete
+              echo "[INFO] Deploying delta changes..."
+              sf project deploy start --source-dir changed-sources/force-app/main/default --test-level RunLocalTests
           else
               echo "[WARNING] No delta changes found. Deploying full source..."
-              sf project deploy start --source-dir force-app/ --test-level RunLocalTests --purge-on-delete
+              sf project deploy start --source-dir force-app/ --test-level RunLocalTests
           fi
 
   Rollback-Deployment:
@@ -109,5 +124,5 @@ jobs:
       - name: 'Rollback Deployment (Including Deletions)'
         run: |
           echo "[INFO] Rolling back to previous deployment..."
-          sf project deploy start --source-dir force-app/main/default/ --test-level RunLocalTests --purge-on-delete
+          sf project deploy start --source-dir force-app/main/default/ --test-level RunLocalTests
           echo "[INFO] Rollback complete."
