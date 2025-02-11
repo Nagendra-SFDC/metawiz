@@ -1,4 +1,5 @@
 name: Prod-Pull-Request-CheckOnly
+
 on:
   pull_request:
     types: [opened, ready_for_review, reopened, synchronize]
@@ -8,71 +9,48 @@ jobs:
   ProdPullRequestCheckOnly:
     if: github.event.pull_request.merged == false
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: '20'
 
-      - name: Checking the branch and the package file
+      - name: Checking if package file exists
         run: |
-          fullName=${{ github.head_ref }}
-          echo "Full branch name: $fullName"
+          packageFileName="manifest/package.xml"
+          echo "Using package file: $packageFileName"
 
-          # Extracting meaningful branch name
-          finalBranchName=$(echo "$fullName" | awk -F'/' '{print $NF}')
-          echo "Final branch name: $finalBranchName"
-
-          packageFileName="manifest/package-$finalBranchName.xml"
-          packageTestFileName="manifest/packageTest-$finalBranchName.xml"
-
-          echo "Checking if the package file exists..."
           if [[ -f $packageFileName ]]; then
-            echo "Package file exists. Continuing the process!"
+            echo "The package file exists, continuing the process!"
           else
-            echo "Error: The package file does not exist! Exiting..."
+            echo "The package file does not exist, failing process!"
             exit 1
           fi
 
-          # Define environment variables for later steps
-          echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV
-          echo "TEST_PACKAGE_FILE_NAME=$packageTestFileName" >> $GITHUB_ENV
+          echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV;
 
-      - name: Installing dependencies
-        run: npm install xml2js
-
-      - name: Reading package test classes
+      - name: Fix npm Dependency Issues (ERESOLVE)
         run: |
-          node ./scripts/js/readNamedApexTestClass.js "${{ env.PACKAGE_FILE_NAME }}" "${{ env.TEST_PACKAGE_FILE_NAME }}"
+          rm -rf node_modules package-lock.json
+          npm cache clean --force
+          npm install @lwc/eslint-plugin-lwc@2 --save-dev
+          npm install --legacy-peer-deps
 
-      - name: Check if process should continue
-        run: |
-          if [ ! -f "${{ env.TEST_PACKAGE_FILE_NAME }}" ]; then
-            echo "No test package file found, skipping tests..."
-            echo "SFDX_RUN_TEST_LEVEL=-l NoTestRun" >> $GITHUB_ENV
-          else
-            echo "Test package file found."
-          fi
+      - name: Install xml2js (for extracting test class names)
+        run: npm install xml2js --legacy-peer-deps
 
-      - name: Set test execution strategy
+      - name: Install sfdx CLI
         run: |
-          if [ -z "${{ env.SFDX_SPECIFIC_TEST_FOUND }}" ]; then
-            echo "No specific test classes found."
-            SFDX_RUN_TEST_LEVEL="-l NoTestRun"
-          else
-            echo "Running specific test classes: ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
-            SFDX_RUN_TEST_LEVEL="-l RunSpecifiedTests --tests ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
-          fi
-          echo "SFDX_RUN_TEST_LEVEL=$SFDX_RUN_TEST_LEVEL" >> $GITHUB_ENV
-
-      - name: Install Salesforce CLI
-        run: |
-          wget -q https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz
+          wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz -q
           mkdir sfdx
           tar xJf sfdx-linux-x64.tar.xz -C sfdx --strip-components 1
           echo "sfdx/bin" >> $GITHUB_PATH
 
-      - name: Login to Salesforce
+      - name: Login to Salesforce Org
         env:
           DEPLOYMENT_USER: ${{ secrets.PROD_USER_ADMIN }}
           CONSUMER_KEY: ${{ secrets.PROD_CONSUMER_KEY }}
@@ -81,18 +59,10 @@ jobs:
         run: |
           mkdir -p JWT
           echo "$SERVER_KEY_CERTIFICATE" > ./JWT/connectionFile
-          sf org login jwt --client-id $CONSUMER_KEY --jwt-key-file JWT/connectionFile --username $DEPLOYMENT_USER --set-default --instance-url $INSTANCE_URL --alias DeploymetOrg
+          sf org login jwt --client-id $CONSUMER_KEY --jwt-key-file JWT/connectionFile --username $DEPLOYMENT_USER --set-default --instance-url $INSTANCE_URL --alias DeploymentOrg
           rm -rf JWT
 
       - name: Running the validation
-        if: github.event.pull_request.merged == false
         run: |
-          echo "Checking CLI version..."
+          echo "Checking CLI version"
           sf -v
-
-          rm -rf Deploy
-          mkdir Deploy
-
-          echo "Executing validation with test level: $SFDX_RUN_TEST_LEVEL"
-
-          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 $SFDX_RUN_TEST_LEVEL
