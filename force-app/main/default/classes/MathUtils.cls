@@ -15,5 +15,9 @@ public class MathUtils {
     public static void testPrime() {
         System.debug('Is 7 Prime? ' + isPrime(7));  // Should return true
         System.debug('Is 10 Prime? ' + isPrime(10)); // Should return false
+
+
+
+        
     }
 }
