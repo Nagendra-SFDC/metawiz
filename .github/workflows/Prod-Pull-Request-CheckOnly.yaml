@@ -17,65 +17,55 @@ jobs:
       - name: Checking if package file exists
         run: |
           packageFileName="manifest/package.xml"
-          packageTestFileName="manifest/packageTest.xml"
 
           echo "Using package file: $packageFileName"
-          echo "Using test package file: $packageTestFileName"
 
-          if [[ -f $packageFileName  ]]; then
+          if [[ -f $packageFileName ]]; then
             echo "The package file exists, continuing the process!"
           else
             echo "The package file does not exist, failing process!"
             exit 1
           fi
 
-          echo "Checking for destructive changes"
-          destructivePreName="manifestDestructive/packagePre.xml"
-          destructivePosName="manifestDestructive/packagePos.xml"
-
-          if [[ -f $destructivePreName ]]; then
-            echo "Found destructive pre-deployment file: $destructivePreName"
-            DESTRUCTIVE_PRE_DEPLOY=$destructivePreName
-          else
-            DESTRUCTIVE_PRE_DEPLOY=""
-          fi
-
-          if [[ -f $destructivePosName ]]; then
-            echo "Found destructive post-deployment file: $destructivePosName"
-            DESTRUCTIVE_POS_DEPLOY=$destructivePosName
-          else
-            DESTRUCTIVE_POS_DEPLOY=""
-          fi
-
-          echo "DESTRUCTIVE_PRE_DEPLOY=$DESTRUCTIVE_PRE_DEPLOY" >> $GITHUB_ENV;
-          echo "DESTRUCTIVE_POS_DEPLOY=$DESTRUCTIVE_POS_DEPLOY" >> $GITHUB_ENV;
           echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV;
-          echo "TEST_PACKAGE_FILE_NAME=$packageTestFileName" >> $GITHUB_ENV;
 
-      - name: Installing xml2js
+      - name: Install xml2js (for extracting test class names)
         run: npm install xml2js
 
-      - name: Reading package test classes
+      - name: Extract test class names ending with 'Test'
         run: |
-          node ./scripts/js/readNamedApexTestClass.js "${{ env.PACKAGE_FILE_NAME }}" "${{ env.TEST_PACKAGE_FILE_NAME }}"
+          node - <<EOF
+          const fs = require('fs');
+          const xml2js = require('xml2js');
 
-      - name: Check if process should continue
-        run: |
-          if [ "${{ env.CONTINUE_PROCESS }}" == "Is missing" ]
-          then
-            echo "Process needs to stop due to missing test package file ${{ env.TEST_PACKAGE_FILE_NAME }}."
-            exit 1
-          fi
+          const filePath = process.env.PACKAGE_FILE_NAME;
+          fs.readFile(filePath, (err, data) => {
+              if (err) {
+                  console.error("Error reading package.xml:", err);
+                  process.exit(1);
+              }
 
-      - name: Defining the test command
-        run: |
-          if [ -z "${{ env.SFDX_SPECIFIC_TEST_FOUND }}" ]
-          then
-            SFDX_RUN_TEST_LEVEL="-l NoTestRun"
-          else
-            SFDX_RUN_TEST_LEVEL="-l RunSpecifiedTests --tests ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
-          fi
-          echo "SFDX_RUN_TEST_LEVEL=$SFDX_RUN_TEST_LEVEL" >> $GITHUB_ENV;
+              xml2js.parseString(data, (err, result) => {
+                  if (err) {
+                      console.error("Error parsing XML:", err);
+                      process.exit(1);
+                  }
+
+                  const members = result.Package.types.find(t => t.name.includes("ApexClass"))?.members || [];
+                  const testClasses = members.filter(c => c.match(/Test$/)).join(',');
+
+                  if (testClasses) {
+                      console.log("Identified test classes:", testClasses);
+                      console.log(`SFDX_RUN_TEST_LEVEL=--test-level RunSpecifiedTests --tests ${testClasses}`); 
+                      console.log(`SFDX_SPECIFIC_TEST_FOUND=${testClasses}`);
+                      fs.appendFileSync(process.env.GITHUB_ENV, `SFDX_RUN_TEST_LEVEL=--test-level RunSpecifiedTests --tests ${testClasses}\n`);
+                  } else {
+                      console.log("No test classes found, using NoTestRun.");
+                      fs.appendFileSync(process.env.GITHUB_ENV, "SFDX_RUN_TEST_LEVEL=-l NoTestRun\n");
+                  }
+              });
+          });
+          EOF
 
       - name: Install sfdx CLI
         run: |
@@ -101,15 +91,4 @@ jobs:
           echo "Checking CLI version"
           sf -v
 
-          rm -rf Deploy
-          mkdir Deploy
-
-          if [[ -z "${{ env.DESTRUCTIVE_PRE_DEPLOY }}" ]]; then
-            echo "No destructive pre-deployment steps defined!"
-          else
-            destructivePreFileName="Deploy/destructiveChangesPre.xml"
-            cp "${{ env.DESTRUCTIVE_PRE_DEPLOY }}" "$destructivePreFileName"
-            FINAL_DESTRUCTIVE_PRE_DEPLOY="--pre-destructive-changes $destructivePreFileName"
-          fi
-
-          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 ${{ env.SFDX_RUN_TEST_LEVEL }} ${FINAL_DESTRUCTIVE_PRE_DEPLOY}
+          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 ${{ env.SFDX_RUN_TEST_LEVEL }}
