@@ -18,51 +18,85 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Checking if package file exists
         run: |
           packageFileName="manifest/package.xml"
-          echo "Using package file: $packageFileName"
-
           if [[ -f $packageFileName ]]; then
-            echo "The package file exists, continuing the process!"
+            echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV
           else
-            echo "The package file does not exist, failing process!"
+            echo "::error::Package file missing!"
             exit 1
           fi
 
-          echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV;
-
-      - name: Fix npm Dependency Issues (ERESOLVE)
+      - name: Install dependencies
         run: |
-          rm -rf node_modules package-lock.json
-          npm cache clean --force
-          npm install @lwc/eslint-plugin-lwc@2 --save-dev
-          npm install --legacy-peer-deps
+          npm install -g @salesforce/cli@latest
+          npm install xml2js --legacy-peer-deps
 
-      - name: Install xml2js (for extracting test class names)
-        run: npm install xml2js --legacy-peer-deps
-
-      - name: Install sfdx CLI
+      - name: Extract Test Classes from Package
+        id: extract-tests
         run: |
-          wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz -q
-          mkdir sfdx
-          tar xJf sfdx-linux-x64.tar.xz -C sfdx --strip-components 1
-          echo "sfdx/bin" >> $GITHUB_PATH
+          node <<EOF
+          const fs = require('fs');
+          const xml2js = require('xml2js');
 
-      - name: Login to Salesforce Org
+          const packageFile = process.env.PACKAGE_FILE_NAME;
+          const xmlData = fs.readFileSync(packageFile, 'utf-8');
+
+          xml2js.parseString(xmlData, (err, result) => {
+            if (err) throw err;
+
+            const testClasses = [];
+            const types = result.Package.types || [];
+            
+            types.forEach(type => {
+              if (type.name && type.name[0] === 'ApexClass') {
+                const members = type.members || [];
+                members.forEach(member => {
+                  if (member.endsWith('Test')) {
+                    testClasses.push(member);
+                  }
+                });
+              }
+            });
+
+            console.log('Identified Test Classes:', testClasses);
+            fs.appendFileSync(process.env.GITHUB_ENV, 
+              `TEST_CLASSES=${testClasses.join(',')}\n`);
+          });
+          EOF
+
+      - name: Configure JWT Auth
         env:
           DEPLOYMENT_USER: ${{ secrets.PROD_USER_ADMIN }}
           CONSUMER_KEY: ${{ secrets.PROD_CONSUMER_KEY }}
           INSTANCE_URL: ${{ secrets.PROD_INSTANCE_URL }}
           SERVER_KEY_CERTIFICATE: ${{ secrets.JWT_SERVER_KEY }}
         run: |
-          mkdir -p JWT
-          echo "$SERVER_KEY_CERTIFICATE" > ./JWT/connectionFile
-          sf org login jwt --client-id $CONSUMER_KEY --jwt-key-file JWT/connectionFile --username $DEPLOYMENT_USER --set-default --instance-url $INSTANCE_URL --alias DeploymentOrg
-          rm -rf JWT
+          mkdir -p ./jwt
+          echo "$SERVER_KEY_CERTIFICATE" | base64 -d > ./jwt/server.key
+          sf org login jwt \
+            --client-id $CONSUMER_KEY \
+            --jwt-key-file ./jwt/server.key \
+            --username $DEPLOYMENT_USER \
+            --instance-url $INSTANCE_URL \
+            --alias DeploymentOrg
 
-      - name: Running the validation
+      - name: Validate Deployment with Tests
         run: |
-          echo "Checking CLI version"
-          sf -v
+          if [[ -n "$TEST_CLASSES" ]]; then
+            echo "🔄 Running specified test classes: $TEST_CLASSES"
+            sf project deploy validate \
+              --manifest $PACKAGE_FILE_NAME \
+              --test-level RunSpecifiedTests \
+              --tests $TEST_CLASSES \
+              --wait 30
+          else
+            echo "⚠️ No specific test classes found. Running all local tests."
+            sf project deploy validate \
+              --manifest $PACKAGE_FILE_NAME \
+              --test-level RunLocalTests \
+              --wait 30
+          fi
