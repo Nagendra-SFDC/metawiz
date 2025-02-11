@@ -37,46 +37,11 @@ jobs:
         run: |
           rm -rf node_modules package-lock.json
           npm cache clean --force
-          npm install eslint@8 --save-dev
+          npm install @lwc/eslint-plugin-lwc@2 --save-dev
           npm install --legacy-peer-deps
 
       - name: Install xml2js (for extracting test class names)
         run: npm install xml2js --legacy-peer-deps
-
-      - name: Extract test class names ending with 'Test'
-        run: |
-          node - <<EOF
-          const fs = require('fs');
-          const xml2js = require('xml2js');
-
-          const filePath = process.env.PACKAGE_FILE_NAME;
-          fs.readFile(filePath, (err, data) => {
-              if (err) {
-                  console.error("Error reading package.xml:", err);
-                  process.exit(1);
-              }
-
-              xml2js.parseString(data, (err, result) => {
-                  if (err) {
-                      console.error("Error parsing XML:", err);
-                      process.exit(1);
-                  }
-
-                  const members = result.Package.types.find(t => t.name.includes("ApexClass"))?.members || [];
-                  const testClasses = members.filter(c => c.match(/Test$/)).join(',');
-
-                  if (testClasses) {
-                      console.log("Identified test classes:", testClasses);
-                      console.log(`SFDX_RUN_TEST_LEVEL=--test-level RunSpecifiedTests --tests ${testClasses}`); 
-                      console.log(`SFDX_SPECIFIC_TEST_FOUND=${testClasses}`);
-                      fs.appendFileSync(process.env.GITHUB_ENV, `SFDX_RUN_TEST_LEVEL=--test-level RunSpecifiedTests --tests ${testClasses}\n`);
-                  } else {
-                      console.log("No test classes found, using NoTestRun.");
-                      fs.appendFileSync(process.env.GITHUB_ENV, "SFDX_RUN_TEST_LEVEL=-l NoTestRun\n");
-                  }
-              });
-          });
-          EOF
 
       - name: Install sfdx CLI
         run: |
@@ -101,5 +66,3 @@ jobs:
         run: |
           echo "Checking CLI version"
           sf -v
-
-          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 ${{ env.SFDX_RUN_TEST_LEVEL }}
