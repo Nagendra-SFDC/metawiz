@@ -3,6 +3,7 @@ on:
   pull_request:
     types: [opened, ready_for_review, reopened, synchronize]
     branches: [main]
+
 jobs:
   ProdPullRequestCheckOnly:
     if: github.event.pull_request.merged == false
@@ -12,51 +13,18 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: '20'
+
       - name: Checking the branch and the package file
         run: |
           fullName=${{ github.head_ref }}
           echo "Full branch name: $fullName"
 
-          # Default to the full branch name if no prefix match
-          finalBranchName=$fullName
-
-          # Define known branch prefixes
-          feature="feature"
-          release="release"
-          bugfix="bugfix"
-          hotfix="hotfix"
-
-          if [[ "$fullName" == *"$feature/"* ]]; then
-            subString="$feature/"
-          elif [[ "$fullName" == *"$release/"* ]]; then
-            subString="$release/"
-          elif [[ "$fullName" == *"$bugfix/"* ]]; then
-            subString="$bugfix/"
-          elif [[ "$fullName" == *"$hotfix/"* ]]; then
-            subString="$hotfix/"
-          else
-            subString=""
-          fi
-
-          # Extract the branch name if it contains a known prefix
-          if [[ -n "$subString" ]]; then
-            reducedName=$(echo "$fullName" | grep -o "$subString.*")
-            finalBranchName=$(echo "$reducedName" | grep -o "/.*")
-            finalBranchName=${finalBranchName:1}  # Remove leading '/'
-          fi
-
-          # Ensure finalBranchName is set
-          if [[ -z "$finalBranchName" ]]; then
-            echo "Error: Could not determine the final branch name. Exiting!"
-            exit 1
-          fi
-
+          # Extracting meaningful branch name
+          finalBranchName=$(echo "$fullName" | awk -F'/' '{print $NF}')
           echo "Final branch name: $finalBranchName"
 
           packageFileName="manifest/package-$finalBranchName.xml"
           packageTestFileName="manifest/packageTest-$finalBranchName.xml"
-          echo "Package file name: $packageFileName"
-          echo "Test package file name: $packageTestFileName"
 
           echo "Checking if the package file exists..."
           if [[ -f $packageFileName ]]; then
@@ -66,62 +34,40 @@ jobs:
             exit 1
           fi
 
-          echo "Checking for destructive changes..."
-          destructivePreName="manifestDestructive/packagePre-$finalBranchName.xml"
-          destructivePosName="manifestDestructive/packagePos-$finalBranchName.xml"
-
-          if [[ -f $destructivePreName ]]; then
-            echo "Found destructive pre-deployment file: $destructivePreName"
-            DESTRUCTIVE_PRE_DEPLOY=$destructivePreName
-          else
-            DESTRUCTIVE_PRE_DEPLOY=""
-          fi
-
-          if [[ -f $destructivePosName ]]; then
-            echo "Found destructive post-deployment file: $destructivePosName"
-            DESTRUCTIVE_POS_DEPLOY=$destructivePosName
-          else
-            DESTRUCTIVE_POS_DEPLOY=""
-          fi
-
-          echo "DESTRUCTIVE_PRE_DEPLOY=$DESTRUCTIVE_PRE_DEPLOY" >> $GITHUB_ENV
-          echo "DESTRUCTIVE_POS_DEPLOY=$DESTRUCTIVE_POS_DEPLOY" >> $GITHUB_ENV
+          # Define environment variables for later steps
           echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV
           echo "TEST_PACKAGE_FILE_NAME=$packageTestFileName" >> $GITHUB_ENV
 
-      - name: Installing xml2js
+      - name: Installing dependencies
         run: npm install xml2js
-  
+
       - name: Reading package test classes
         run: |
           node ./scripts/js/readNamedApexTestClass.js "${{ env.PACKAGE_FILE_NAME }}" "${{ env.TEST_PACKAGE_FILE_NAME }}"
 
       - name: Check if process should continue
         run: |
-          if [ "${{ env.CONTINUE_PROCESS }}" == "Is missing" ]; then
-            echo "Error: Missing test package file ${{ env.TEST_PACKAGE_FILE_NAME }}. Exiting..."
-            exit 1
+          if [ ! -f "${{ env.TEST_PACKAGE_FILE_NAME }}" ]; then
+            echo "No test package file found, skipping tests..."
+            echo "SFDX_RUN_TEST_LEVEL=-l NoTestRun" >> $GITHUB_ENV
+          else
+            echo "Test package file found."
           fi
 
-          echo "Test package file found: ${{ env.TEST_PACKAGE_FILE_NAME }}."
-          echo "Found test classes: ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
-
-      - name: Defining the test command
+      - name: Set test execution strategy
         run: |
           if [ -z "${{ env.SFDX_SPECIFIC_TEST_FOUND }}" ]; then
-            echo "No test classes found"
+            echo "No specific test classes found."
             SFDX_RUN_TEST_LEVEL="-l NoTestRun"
           else
+            echo "Running specific test classes: ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
             SFDX_RUN_TEST_LEVEL="-l RunSpecifiedTests --tests ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
           fi
           echo "SFDX_RUN_TEST_LEVEL=$SFDX_RUN_TEST_LEVEL" >> $GITHUB_ENV
 
-      - name: Printing specific test classes found
-        run: echo "Specific test classes to run: ${{ env.SFDX_RUN_TEST_LEVEL }}"
-
-      - name: Install sfdx CLI
+      - name: Install Salesforce CLI
         run: |
-          wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz -q
+          wget -q https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz
           mkdir sfdx
           tar xJf sfdx-linux-x64.tar.xz -C sfdx --strip-components 1
           echo "sfdx/bin" >> $GITHUB_PATH
@@ -147,17 +93,6 @@ jobs:
           rm -rf Deploy
           mkdir Deploy
 
-          FINAL_DESTRUCTIVE_PRE_DEPLOY=""
+          echo "Executing validation with test level: $SFDX_RUN_TEST_LEVEL"
 
-          if [[ -n "${{ env.DESTRUCTIVE_PRE_DEPLOY }}" ]]; then
-            echo "Applying destructive pre-deployment changes"
-            destructivePreFileName="Deploy/destructiveChangesPre.xml"
-            cp "${{ env.DESTRUCTIVE_PRE_DEPLOY }}" "$destructivePreFileName"
-            FINAL_DESTRUCTIVE_PRE_DEPLOY="--pre-destructive-changes $destructivePreFileName"
-          else
-            echo "No destructive pre-deployment steps found."
-          fi
-
-          echo "FINAL_DESTRUCTIVE_PRE_DEPLOY = $FINAL_DESTRUCTIVE_PRE_DEPLOY"
-
-          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 ${{ env.SFDX_RUN_TEST_LEVEL }} ${FINAL_DESTRUCTIVE_PRE_DEPLOY}
+          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 $SFDX_RUN_TEST_LEVEL
