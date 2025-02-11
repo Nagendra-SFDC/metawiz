@@ -1,4 +1,4 @@
-name: Prod-Pull-Request-CheckOnly
+name: Prod-Pull-Request-Validation
 
 on:
   pull_request:
@@ -6,97 +6,102 @@ on:
     branches: [main]
 
 jobs:
-  ProdPullRequestCheckOnly:
+  Validate-Deployment:
     if: github.event.pull_request.merged == false
     runs-on: ubuntu-latest
+    env:
+      PACKAGE_FILE: manifest/package.xml
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.x'
           cache: 'npm'
 
-      - name: Checking if package file exists
+      - name: Verify Package.xml
         run: |
-          packageFileName="manifest/package.xml"
-          if [[ -f $packageFileName ]]; then
-            echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV
-          else
-            echo "::error::Package file missing!"
+          if [ ! -f "$PACKAGE_FILE" ]; then
+            echo "::error::Missing package.xml at $PACKAGE_FILE"
             exit 1
           fi
+          echo "PACKAGE_PATH=$PACKAGE_FILE" >> $GITHUB_ENV
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
+          npm ci --legacy-peer-deps
           npm install -g @salesforce/cli@latest
-          npm install xml2js --legacy-peer-deps
+          npm install xml2js --no-save
 
-      - name: Extract Test Classes from Package
-        id: extract-tests
+      - name: Extract Test Classes
+        id: test-extractor
         run: |
           node <<EOF
-          const fs = require('fs');
-          const xml2js = require('xml2js');
+          const { readFileSync } = require('fs');
+          const { parseString } = require('xml2js');
 
-          const packageFile = process.env.PACKAGE_FILE_NAME;
-          const xmlData = fs.readFileSync(packageFile, 'utf-8');
-
-          xml2js.parseString(xmlData, (err, result) => {
-            if (err) throw err;
-
-            const testClasses = [];
-            const types = result.Package.types || [];
+          const xml = readFileSync(process.env.PACKAGE_PATH, 'utf-8');
+          parseString(xml, (err, result) => {
+            if (err) process.exit(1);
             
-            types.forEach(type => {
-              if (type.name && type.name[0] === 'ApexClass') {
-                const members = type.members || [];
-                members.forEach(member => {
-                  if (member.endsWith('Test')) {
-                    testClasses.push(member);
+            const tests = [];
+            (result.Package.types || []).forEach(type => {
+              if (type.name?.[0] === 'ApexClass') {
+                (type.members || []).forEach(member => {
+                  if (typeof member === 'string' && member.endsWith('Test')) {
+                    tests.push(member);
                   }
                 });
               }
             });
-
-            console.log('Identified Test Classes:', testClasses);
-            fs.appendFileSync(process.env.GITHUB_ENV, 
-              `TEST_CLASSES=${testClasses.join(',')}\n`);
+            
+            const testList = tests.join(',');
+            console.log(`Extracted tests: ${testList}`);
+            process.env.GITHUB_OUTPUT && 
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `tests=${testList}\n`);
           });
           EOF
 
-      - name: Configure JWT Auth
+      - name: Salesforce Auth
         env:
-          DEPLOYMENT_USER: ${{ secrets.PROD_USER_ADMIN }}
-          CONSUMER_KEY: ${{ secrets.PROD_CONSUMER_KEY }}
-          INSTANCE_URL: ${{ secrets.PROD_INSTANCE_URL }}
-          SERVER_KEY_CERTIFICATE: ${{ secrets.JWT_SERVER_KEY }}
+          SF_USER: ${{ secrets.PROD_USER_ADMIN }}
+          SF_CLIENT_ID: ${{ secrets.PROD_CONSUMER_KEY }}
+          SF_INSTANCE: ${{ secrets.PROD_INSTANCE_URL }}
+          SF_JWT_KEY: ${{ secrets.JWT_SERVER_KEY }}
         run: |
-          mkdir -p ./jwt
-          echo "$SERVER_KEY_CERTIFICATE" | base64 -d > ./jwt/server.key
+          mkdir -p .sfdx
+          echo "$SF_JWT_KEY" | base64 -d > .sfdx/server.key
           sf org login jwt \
-            --client-id $CONSUMER_KEY \
-            --jwt-key-file ./jwt/server.key \
-            --username $DEPLOYMENT_USER \
-            --instance-url $INSTANCE_URL \
-            --alias DeploymentOrg
+            --username "$SF_USER" \
+            --client-id "$SF_CLIENT_ID" \
+            --jwt-key-file .sfdx/server.key \
+            --instance-url "$SF_INSTANCE" \
+            --alias validation-org
 
-      - name: Validate Deployment with Tests
+      - name: Validate Deployment
         run: |
-          if [[ -n "$TEST_CLASSES" ]]; then
-            echo "🔄 Running specified test classes: $TEST_CLASSES"
-            sf project deploy validate \
-              --manifest $PACKAGE_FILE_NAME \
-              --test-level RunSpecifiedTests \
-              --tests $TEST_CLASSES \
-              --wait 30
-          else
-            echo "⚠️ No specific test classes found. Running all local tests."
-            sf project deploy validate \
-              --manifest $PACKAGE_FILE_NAME \
-              --test-level RunLocalTests \
-              --wait 30
+          TEST_LEVEL="RunLocalTests"
+          if [ -n "${{ steps.test-extractor.outputs.tests }}" ]; then
+            TEST_LEVEL="RunSpecifiedTests"
+            TESTS_PARAM="--tests ${{ steps.test-extractor.outputs.tests }}"
+          fi
+
+          sf project deploy validate \
+            --manifest "$PACKAGE_PATH" \
+            --test-level "$TEST_LEVEL" \
+            $TESTS_PARAM \
+            --wait 30 \
+            --coverage-formatters text \
+            --coverage-formatters-dir ./coverage
+
+      - name: Check Test Coverage
+        run: |
+          COVERAGE=$(grep -oP 'Overall Code Coverage: \K\d+' ./coverage/coverage.txt)
+          echo "Code Coverage: ${COVERAGE}%"
+          if [ "$COVERAGE" -lt 75 ]; then
+            echo "::error::Code coverage below 75% (${COVERAGE}%)"
+            exit 1
           fi
