@@ -14,31 +14,45 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Checking the branch and the package file
+      - name: Checking if package file exists
         run: |
-          fullName=${{ github.head_ref }}
-          echo "Full branch name: $fullName"
+          packageFileName="manifest/package.xml"
+          packageTestFileName="manifest/packageTest.xml"
 
-          # Extracting meaningful branch name
-          finalBranchName=$(echo "$fullName" | awk -F'/' '{print $NF}')
-          echo "Final branch name: $finalBranchName"
+          echo "Using package file: $packageFileName"
+          echo "Using test package file: $packageTestFileName"
 
-          packageFileName="manifest/package-$finalBranchName.xml"
-          packageTestFileName="manifest/packageTest-$finalBranchName.xml"
-
-          echo "Checking if the package file exists..."
-          if [[ -f $packageFileName ]]; then
-            echo "Package file exists. Continuing the process!"
+          if [[ -f $packageFileName  ]]; then
+            echo "The package file exists, continuing the process!"
           else
-            echo "Error: The package file does not exist! Exiting..."
+            echo "The package file does not exist, failing process!"
             exit 1
           fi
 
-          # Define environment variables for later steps
-          echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV
-          echo "TEST_PACKAGE_FILE_NAME=$packageTestFileName" >> $GITHUB_ENV
+          echo "Checking for destructive changes"
+          destructivePreName="manifestDestructive/packagePre.xml"
+          destructivePosName="manifestDestructive/packagePos.xml"
 
-      - name: Installing dependencies
+          if [[ -f $destructivePreName ]]; then
+            echo "Found destructive pre-deployment file: $destructivePreName"
+            DESTRUCTIVE_PRE_DEPLOY=$destructivePreName
+          else
+            DESTRUCTIVE_PRE_DEPLOY=""
+          fi
+
+          if [[ -f $destructivePosName ]]; then
+            echo "Found destructive post-deployment file: $destructivePosName"
+            DESTRUCTIVE_POS_DEPLOY=$destructivePosName
+          else
+            DESTRUCTIVE_POS_DEPLOY=""
+          fi
+
+          echo "DESTRUCTIVE_PRE_DEPLOY=$DESTRUCTIVE_PRE_DEPLOY" >> $GITHUB_ENV;
+          echo "DESTRUCTIVE_POS_DEPLOY=$DESTRUCTIVE_POS_DEPLOY" >> $GITHUB_ENV;
+          echo "PACKAGE_FILE_NAME=$packageFileName" >> $GITHUB_ENV;
+          echo "TEST_PACKAGE_FILE_NAME=$packageTestFileName" >> $GITHUB_ENV;
+
+      - name: Installing xml2js
         run: npm install xml2js
 
       - name: Reading package test classes
@@ -47,32 +61,30 @@ jobs:
 
       - name: Check if process should continue
         run: |
-          if [ ! -f "${{ env.TEST_PACKAGE_FILE_NAME }}" ]; then
-            echo "No test package file found, skipping tests..."
-            echo "SFDX_RUN_TEST_LEVEL=-l NoTestRun" >> $GITHUB_ENV
-          else
-            echo "Test package file found."
+          if [ "${{ env.CONTINUE_PROCESS }}" == "Is missing" ]
+          then
+            echo "Process needs to stop due to missing test package file ${{ env.TEST_PACKAGE_FILE_NAME }}."
+            exit 1
           fi
 
-      - name: Set test execution strategy
+      - name: Defining the test command
         run: |
-          if [ -z "${{ env.SFDX_SPECIFIC_TEST_FOUND }}" ]; then
-            echo "No specific test classes found."
+          if [ -z "${{ env.SFDX_SPECIFIC_TEST_FOUND }}" ]
+          then
             SFDX_RUN_TEST_LEVEL="-l NoTestRun"
           else
-            echo "Running specific test classes: ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
             SFDX_RUN_TEST_LEVEL="-l RunSpecifiedTests --tests ${{ env.SFDX_SPECIFIC_TEST_FOUND }}"
           fi
-          echo "SFDX_RUN_TEST_LEVEL=$SFDX_RUN_TEST_LEVEL" >> $GITHUB_ENV
+          echo "SFDX_RUN_TEST_LEVEL=$SFDX_RUN_TEST_LEVEL" >> $GITHUB_ENV;
 
-      - name: Install Salesforce CLI
+      - name: Install sfdx CLI
         run: |
-          wget -q https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz
+          wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz -q
           mkdir sfdx
           tar xJf sfdx-linux-x64.tar.xz -C sfdx --strip-components 1
           echo "sfdx/bin" >> $GITHUB_PATH
 
-      - name: Login to Salesforce
+      - name: Login to Salesforce Org
         env:
           DEPLOYMENT_USER: ${{ secrets.PROD_USER_ADMIN }}
           CONSUMER_KEY: ${{ secrets.PROD_CONSUMER_KEY }}
@@ -81,18 +93,23 @@ jobs:
         run: |
           mkdir -p JWT
           echo "$SERVER_KEY_CERTIFICATE" > ./JWT/connectionFile
-          sf org login jwt --client-id $CONSUMER_KEY --jwt-key-file JWT/connectionFile --username $DEPLOYMENT_USER --set-default --instance-url $INSTANCE_URL --alias DeploymetOrg
+          sf org login jwt --client-id $CONSUMER_KEY --jwt-key-file JWT/connectionFile --username $DEPLOYMENT_USER --set-default --instance-url $INSTANCE_URL --alias DeploymentOrg
           rm -rf JWT
 
       - name: Running the validation
-        if: github.event.pull_request.merged == false
         run: |
-          echo "Checking CLI version..."
+          echo "Checking CLI version"
           sf -v
 
           rm -rf Deploy
           mkdir Deploy
 
-          echo "Executing validation with test level: $SFDX_RUN_TEST_LEVEL"
+          if [[ -z "${{ env.DESTRUCTIVE_PRE_DEPLOY }}" ]]; then
+            echo "No destructive pre-deployment steps defined!"
+          else
+            destructivePreFileName="Deploy/destructiveChangesPre.xml"
+            cp "${{ env.DESTRUCTIVE_PRE_DEPLOY }}" "$destructivePreFileName"
+            FINAL_DESTRUCTIVE_PRE_DEPLOY="--pre-destructive-changes $destructivePreFileName"
+          fi
 
-          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 $SFDX_RUN_TEST_LEVEL
+          sf project deploy start --dry-run --manifest "${{ env.PACKAGE_FILE_NAME }}" -w 60 ${{ env.SFDX_RUN_TEST_LEVEL }} ${FINAL_DESTRUCTIVE_PRE_DEPLOY}
