@@ -13,12 +13,6 @@ public class MathUtils {
 
     // Test the method in Anonymous Apex
     public static void testPrime() {
-        System.debug('Is 7 Prime? ' + isPrime(7));  // Should return true
-<<<<<<< HEAD
-    
-                                   
-=======
-
->>>>>>> 9d518fbc97707e38e650e5c7092e4ee28ffb9136
+        System.debug('Is 7 Prime? ' + isPrime(7)); 
     }
 }
