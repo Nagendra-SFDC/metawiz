@@ -28,7 +28,7 @@ public with sharing class myclass {
             if (prop.name == propertyName) {
                 prop.price = newPrice;
                 return 'Price updated successfully';
-            }
+            }          
         }                   
         return 'Property not found';
     }

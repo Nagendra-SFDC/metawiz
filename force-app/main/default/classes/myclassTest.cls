@@ -1,7 +1,7 @@
 @IsTest
 public with sharing class myclassTest {
       
-    @IsTest
+    @IsTest            
     public static void testGetSampleProperties() {
         List<RealEstateProperty.Property> properties = RealEstateProperty.getSampleProperties();
         System.assertEquals(3, properties.size(), 'Expected 3 sample properties');
