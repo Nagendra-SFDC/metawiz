@@ -8,7 +8,8 @@ public with sharing class myclass {
         public Property(String name, Decimal price, String status) {
             this.name = name;
             this.price = price;
-            this.status = status;       
+            this.status = status;
+
         }
     }
 
