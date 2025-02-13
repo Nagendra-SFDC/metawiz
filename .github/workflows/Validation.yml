@@ -1,6 +1,6 @@
 on:
   push:
-    branches: [QA]
+    branches: [main]
     paths:
       - 'force-app/**'
 
