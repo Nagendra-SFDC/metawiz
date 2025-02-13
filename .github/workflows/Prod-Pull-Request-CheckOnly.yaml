@@ -25,12 +25,11 @@ jobs:
           sfdx auth:sfdxurl:store -f sfdx-auth.json --setdefaultdevhubusername --setalias my-dev-hub
           rm sfdx-auth.json
 
-      - name: Validate Deployment (Dry Run) with Tests
+      - name: Validate Deployment (Dry Run) with Tests from `Testpackage.xml`
         id: deploy
         run: |
-          sfdx force:source:deploy -x manifest/package.xml \
-            --testlevel RunSpecifiedTests --runtests "TestClass1,TestClass2" \
-            --dryrun --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+          sfdx force:source:deploy -x manifest/Testpackage.xml \
+            --testlevel RunSpecifiedTests --dryrun --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
       - name: Parse Test Results
         id: parse-tests
