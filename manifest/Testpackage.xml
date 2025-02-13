@@ -3,7 +3,7 @@
     <types>
         <members>myclassTest</members>
        
-        <name>ApexClass</name>
+        <name>ApexClass</name>          
     </types>
     <version>58.0</version>
 </Package>
