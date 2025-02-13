@@ -19,8 +19,8 @@ public with sharing class myclass {
         properties.add(new Property('Apartment B', 300000, 'Sold'));
         properties.add(new Property('Penthouse C', 800000, 'Available'));
         return properties;
-    }
-                                                                            
+    }                        
+                                                                                                   
     // Method to update the price of a property (by name)
     public static String updatePropertyPrice(String propertyName, Decimal newPrice) {
         List<Property> properties = getSampleProperties();
