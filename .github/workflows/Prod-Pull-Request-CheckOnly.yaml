@@ -16,21 +16,23 @@ jobs:
       - name: Install Salesforce CLI
         run: |
           npm install --global sfdx-cli
+          echo "Verifying CLI Installation..."
           sfdx --version
+          sf --version || echo "sf command not found!"
 
       - name: Authenticate Salesforce
         run: |
           echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt \
+          npx sf org login jwt \
             --username "${{ secrets.DEPLOYMENT_USER_NAME }}" \
             --jwt-key-file server.key \
             --client-id "${{ secrets.CONSUMER_KEY }}" \
             --instance-url "${{ secrets.INSTANCE_URL }}" \
-            --set-default
+            --set-default || { echo "Authentication failed!"; exit 1; }
 
       - name: Validate Deployment (Dry Run)
         run: |
-          sfdx force:source:deploy -x manifest/Testpackage.xml \
+          npx sfdx force:source:deploy -x manifest/Testpackage.xml \
             --testlevel RunSpecifiedTests --checkonly --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
       - name: Install jq (For JSON Parsing)
