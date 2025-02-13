@@ -29,7 +29,7 @@ public with sharing class myclass {
                 prop.price = newPrice;
                 return 'Price updated successfully';
             }          
-        }                   
+        }                                                                  
         return 'Property not found';
     }
 }
