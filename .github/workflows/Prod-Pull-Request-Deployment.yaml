@@ -77,7 +77,7 @@ jobs:
       - name: 'Validate Entire PR (Dry Run) with Extracted Test Classes'
         run: |
           sf project deploy start --source-dir force-app \
-            --test-level RunSpecifiedTests --tests $TEST_CLASS_LIST --check-only --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+            --test-level RunSpecifiedTests --tests $TEST_CLASS_LIST --dry-run --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
       - name: 'Debug JSON Output'
         run: |
@@ -89,8 +89,10 @@ jobs:
       - name: 'Parse Test Results'
         run: |
           TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun // 0' result.json)
+          CLASSES_DEPLOYED=$(jq -r '.result.details.componentSuccesses | length' result.json)
           echo "Tests Run: $TEST_RUN"
           echo "Number of Test Classes Executed: $NUM_TEST_CLASSES"
+          echo "Total Classes Deployed: $CLASSES_DEPLOYED"
           if [[ "$TEST_RUN" -eq "0" ]]; then
             echo "No tests were executed! Failing the job."
             exit 1
