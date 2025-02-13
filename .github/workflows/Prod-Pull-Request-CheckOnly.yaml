@@ -15,7 +15,11 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
+  - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
       - name: Verify Package.xml
         run: |
           if [ ! -f "$PACKAGE_FILE" ]; then
