@@ -32,10 +32,10 @@ jobs:
         run: |
           echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
           sf org login jwt \
-            --username "${{ secrets.DEPLOYMENT_USER_NAME }}" \
-            --jwt-key-file server.key \
-            --client-id "${{ secrets.CONSUMER_KEY }}" \
-            --instance-url "${{ secrets.INSTANCE_URL }}" \
+            --username "${{ secrets.PROD_USER_ADMIN }}" \
+            --jwt-key-file "${{ secrets.JWT_SERVER_KEY }}" \
+            --client-id "${{ secrets.PROD_CONSUMER_KEY }}" \
+            --instance-url "${{ secrets.PROD_INSTANCE_URL }}" \
             --set-default || { echo "Authentication failed!"; exit 1; }
 
       # Validate Deployment (Dry Run)
