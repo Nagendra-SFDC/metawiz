@@ -33,7 +33,7 @@ jobs:
           sfdx force:source:deploy -x manifest/Testpackage.xml \
             --testlevel RunSpecifiedTests --checkonly --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
-      - name: Install `jq` (For JSON Parsing)
+      - name: Install jq (For JSON Parsing)
         run: sudo apt-get install -y jq
 
       - name: Parse Test Results
