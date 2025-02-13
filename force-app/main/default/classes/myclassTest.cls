@@ -7,7 +7,10 @@ public with sharing class myclassTest {
         System.assertEquals(3, properties.size(), 'Expected 3 sample properties');
     }         
                                                             
+
     @IsTest                                                                                                                             
+
+
     public static void testUpdatePropertyPrice() {
         String response = RealEstateProperty.updatePropertyPrice('Villa A', 550000);
         System.assertEquals('Price updated successfully', response, 'Price update failed');

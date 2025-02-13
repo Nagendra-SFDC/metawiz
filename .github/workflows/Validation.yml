@@ -1,0 +1,57 @@
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'force-app/**'
+
+jobs:
+  Deploy-to-sffnoobs-environment:
+    runs-on: ubuntu-latest
+    environment: sffnoobs
+    steps:
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: 'Checkout source code'
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: '2'
+                
+      # Install Salesforce CLI
+      - name: 'Install sfdx'
+        run: npm install --global @salesforce/cli
+
+      - name: 'Installing sfdx git delta'
+        run: | 
+          echo Y | sf plugins install sfdx-git-delta
+          sf plugins
+
+      # Authenticate Salesforce using JWT with sf CLI
+      - name: Authenticate Salesforce
+        run: |
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt \
+            --username "${{ secrets.PROD_USER_ADMIN }}" \
+            --jwt-key-file "${{ secrets.JWT_SERVER_KEY }}" \
+            --client-id "${{ secrets.PROD_CONSUMER_KEY }}" \
+            --instance-url "${{ secrets.PROD_INSTANCE_URL }}" \
+            --set-default || { echo "Authentication failed!"; exit 1; }
+
+      # Validate Deployment (Dry Run)
+      - name: Validate Deployment (Dry Run)
+        run: |
+          sf project deploy start -x manifest/Testpackage.xml \
+            --test-level RunSpecifiedTests --dry-run --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+
+      - name: Install jq (For JSON Parsing)
+        run: sudo apt-get install -y jq
+
+      - name: Parse Test Results
+        run: |
+          TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun' result.json)
+          echo "Tests Run: $TEST_RUN"
+          if [[ "$TEST_RUN" -eq "0" ]]; then
+            echo "No tests were executed! Failing the job."
+            exit 1
+          fi
