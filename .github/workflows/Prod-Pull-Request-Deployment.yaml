@@ -65,23 +65,32 @@ jobs:
           sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/main/default/
           echo "[INFO] Diff generated"
 
-      - name: 'validate environment with local tests'
+      - name: 'Extract Test Class Names from manifest/Testpackage.xml'
         run: |
-          sf project deploy start -x manifest/Testpackage.xml \
-            --test-level RunSpecifiedTests --dry-run --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+          TEST_CLASSES=$(grep -oP '(?<=<members>).*?(?=</members>)' manifest/Testpackage.xml | grep "Test")
+          TEST_CLASS_LIST=$(echo $TEST_CLASSES | tr '\n' ',' | sed 's/,$//')
+          NUM_TEST_CLASSES=$(echo "$TEST_CLASSES" | wc -l)
+          echo "TEST_CLASS_LIST=$TEST_CLASS_LIST" >> $GITHUB_ENV
+          echo "NUM_TEST_CLASSES=$NUM_TEST_CLASSES" >> $GITHUB_ENV
+          echo "Extracted $NUM_TEST_CLASSES test classes: $TEST_CLASS_LIST"
 
-      - name: Install jq (For JSON Parsing)
+      - name: 'Validate Entire PR (Dry Run) with Extracted Test Classes'
+        run: |
+          sf project deploy start --source-dir force-app \
+            --test-level RunSpecifiedTests --tests $TEST_CLASS_LIST --check-only --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+
+      - name: 'Install jq (For JSON Parsing)'
         run: sudo apt-get install -y jq
 
-      - name: Parse Test Results
+      - name: 'Parse Test Results'
         run: |
           TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun' result.json)
           echo "Tests Run: $TEST_RUN"
+          echo "Number of Test Classes Executed: $NUM_TEST_CLASSES"
           if [[ "$TEST_RUN" -eq "0" ]]; then
             echo "No tests were executed! Failing the job."
             exit 1
           fi
-
 
      
 
