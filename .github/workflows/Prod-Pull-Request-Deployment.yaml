@@ -79,18 +79,19 @@ jobs:
           sf project deploy start --source-dir force-app \
             --test-level RunSpecifiedTests --tests $TEST_CLASS_LIST --check-only --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
+      - name: 'Debug JSON Output'
+        run: |
+          cat result.json
+
       - name: 'Install jq (For JSON Parsing)'
         run: sudo apt-get install -y jq
 
       - name: 'Parse Test Results'
         run: |
-          TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun' result.json)
+          TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun // 0' result.json)
           echo "Tests Run: $TEST_RUN"
           echo "Number of Test Classes Executed: $NUM_TEST_CLASSES"
           if [[ "$TEST_RUN" -eq "0" ]]; then
             echo "No tests were executed! Failing the job."
             exit 1
           fi
-
-     
-
