@@ -1,39 +1,48 @@
-name: "Salesforce JWT Authentication"
-
 on:
-  pull_request:
-    branches:
-      - main
+  push:
+    branches: [QA]
+    paths:
+      - 'force-app/**'
 
 jobs:
-  jwt-auth-deployment:
+  Deploy-to-sffnoobs-environment:
     runs-on: ubuntu-latest
-
+    environment: sffnoobs
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-      - name: Install Salesforce CLI
-        run: |
-          npm install --global sfdx-cli
-          echo "Verifying CLI Installation..."
-          sfdx --version
-          sf --version || echo "sf command not found!"
+      - name: 'Checkout source code'
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: '2'
+                
+      # Install Salesforce CLI
+      - name: 'Install sfdx'
+        run: npm install --global @salesforce/cli
 
+      - name: 'Installing sfdx git delta'
+        run: | 
+          echo Y | sf plugins install sfdx-git-delta
+          sf plugins
+
+      # Authenticate Salesforce using JWT with sf CLI
       - name: Authenticate Salesforce
         run: |
           echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
-          npx sf org login jwt \
+          sf org login jwt \
             --username "${{ secrets.DEPLOYMENT_USER_NAME }}" \
             --jwt-key-file server.key \
             --client-id "${{ secrets.CONSUMER_KEY }}" \
             --instance-url "${{ secrets.INSTANCE_URL }}" \
             --set-default || { echo "Authentication failed!"; exit 1; }
 
+      # Validate Deployment (Dry Run)
       - name: Validate Deployment (Dry Run)
         run: |
-          npx sfdx force:source:deploy -x manifest/Testpackage.xml \
-            --testlevel RunSpecifiedTests --checkonly --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+          sf project deploy start -x manifest/Testpackage.xml \
+            --test-level RunSpecifiedTests --dry-run --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
       - name: Install jq (For JSON Parsing)
         run: sudo apt-get install -y jq
