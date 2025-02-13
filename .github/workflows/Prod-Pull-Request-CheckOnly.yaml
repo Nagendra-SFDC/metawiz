@@ -21,20 +21,20 @@ jobs:
 
       - name: Authenticate with Salesforce
         run: |
-          echo ${{ secrets.SFDX_AUTH_URL }} > sfdx-auth.json
-          sfdx auth:sfdxurl:store -f sfdx-auth.json --setdefaultdevhubusername --setalias my-dev-hub
+          echo ${{ secrets.PROD_INSTANCE_URL }} > sfdx-auth.json
+          sfdx force:auth:sfdxurl:store -f sfdx-auth.json --setdefaultdevhubusername --setalias my-dev-hub
           rm sfdx-auth.json
 
       - name: Validate Deployment (Dry Run) with Tests from `Testpackage.xml`
         id: deploy
         run: |
           sfdx force:source:deploy -x manifest/Testpackage.xml \
-            --testlevel RunSpecifiedTests --dryrun --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+            --testlevel RunSpecifiedTests --checkonly --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
       - name: Parse Test Results
         id: parse-tests
         run: |
-          TEST_RUN=$(jq -r '.details.runTestResult.numTestsRun' result.json)
+          TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun' result.json)
           echo "Tests Run: $TEST_RUN"
           if [[ "$TEST_RUN" -eq "0" ]]; then
             echo "No tests were executed! Failing the job."
