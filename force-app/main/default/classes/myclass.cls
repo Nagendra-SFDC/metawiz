@@ -9,6 +9,7 @@ public with sharing class myclass {
             this.name = name;
             this.price = price;
             this.status = status;
+
         }
     }
 
