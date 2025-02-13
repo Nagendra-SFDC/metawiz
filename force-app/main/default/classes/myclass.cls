@@ -3,4 +3,4 @@ public with sharing class myclass {
     public static String sayHello(String name) {
         return 'Hello, ' + name + '!';
     }
-} 
+}                  
