@@ -18,16 +18,23 @@ jobs:
           npm install --global sfdx-cli
           sfdx --version
 
-        - name: Authenticate Salesforce
+      - name: Authenticate Salesforce
         run: |
           echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
-
+          sf org login jwt \
+            --username "${{ secrets.DEPLOYMENT_USER_NAME }}" \
+            --jwt-key-file server.key \
+            --client-id "${{ secrets.CONSUMER_KEY }}" \
+            --instance-url "${{ secrets.INSTANCE_URL }}" \
+            --set-default
 
       - name: Validate Deployment (Dry Run)
         run: |
           sfdx force:source:deploy -x manifest/Testpackage.xml \
             --testlevel RunSpecifiedTests --checkonly --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+
+      - name: Install `jq` (For JSON Parsing)
+        run: sudo apt-get install -y jq
 
       - name: Parse Test Results
         run: |
