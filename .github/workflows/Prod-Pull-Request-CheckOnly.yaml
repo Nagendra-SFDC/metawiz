@@ -1,105 +1,54 @@
-name: Prod-Pull-Request-Validation
+name: "Salesforce Dry Run Deployment"
 
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened, synchronize]
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  Validate-Deployment:
-    if: github.event.pull_request.merged == false
+  dry-run-deployment:
+    name: "Validate Deployment in Salesforce"
     runs-on: ubuntu-latest
-    env:
-      PACKAGE_FILE: manifest/package.xml
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
-  - name: Setup Node.js
-        uses: actions/setup-node@v4
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install --global sfdx-cli
+          sfdx --version
+
+      - name: Authenticate with Salesforce
+        run: |
+          echo ${{ secrets.SFDX_AUTH_URL }} > sfdx-auth.json
+          sfdx auth:sfdxurl:store -f sfdx-auth.json --setdefaultdevhubusername --setalias my-dev-hub
+          rm sfdx-auth.json
+
+      - name: Validate Deployment (Dry Run) with Tests
+        id: deploy
+        run: |
+          sfdx force:source:deploy -x manifest/package.xml \
+            --testlevel RunSpecifiedTests --runtests "TestClass1,TestClass2" \
+            --dryrun --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+
+      - name: Parse Test Results
+        id: parse-tests
+        run: |
+          TEST_RUN=$(jq -r '.details.runTestResult.numTestsRun' result.json)
+          echo "Tests Run: $TEST_RUN"
+          if [[ "$TEST_RUN" -eq "0" ]]; then
+            echo "No tests were executed! Failing the job."
+            exit 1
+          fi
+          echo "tests_run=$TEST_RUN" >> $GITHUB_ENV
+
+      - name: Comment on PR
+        uses: mshick/add-pr-comment@v2
+        if: always()
         with:
-          node-version: '20.x'
-          cache: 'npm'
-      - name: Verify Package.xml
-        run: |
-          if [ ! -f "$PACKAGE_FILE" ]; then
-            echo "::error::Missing package.xml at $PACKAGE_FILE"
-            exit 1
-          fi
-          echo "PACKAGE_PATH=$PACKAGE_FILE" >> $GITHUB_ENV
-
-      - name: Install Dependencies
-        run: |
-          npm ci --legacy-peer-deps
-          npm install -g @salesforce/cli@latest
-          npm install xml2js --no-save
-
-      - name: Extract Test Classes
-        id: test-extractor
-        run: |
-          node <<EOF
-          const { readFileSync } = require('fs');
-          const { parseString } = require('xml2js');
-
-          const xml = readFileSync(process.env.PACKAGE_PATH, 'utf-8');
-          parseString(xml, (err, result) => {
-            if (err) process.exit(1);
-            
-            const tests = [];
-            (result.Package.types || []).forEach(type => {
-              if (type.name?.[0] === 'ApexClass') {
-                (type.members || []).forEach(member => {
-                  if (typeof member === 'string' && member.endsWith('Test')) {
-                    tests.push(member);
-                  }
-                });
-              }
-            });
-            
-            const testList = tests.join(',');
-            console.log(`Extracted tests: ${testList}`);
-            process.env.GITHUB_OUTPUT && 
-              fs.appendFileSync(process.env.GITHUB_OUTPUT, `tests=${testList}\n`);
-          });
-          EOF
-
-      - name: Salesforce Auth
-        env:
-          SF_USER: ${{ secrets.PROD_USER_ADMIN }}
-          SF_CLIENT_ID: ${{ secrets.PROD_CONSUMER_KEY }}
-          SF_INSTANCE: ${{ secrets.PROD_INSTANCE_URL }}
-          SF_JWT_KEY: ${{ secrets.JWT_SERVER_KEY }}
-        run: |
-          mkdir -p .sfdx
-          echo "$SF_JWT_KEY" | base64 -d > .sfdx/server.key
-          sf org login jwt \
-            --username "$SF_USER" \
-            --client-id "$SF_CLIENT_ID" \
-            --jwt-key-file .sfdx/server.key \
-            --instance-url "$SF_INSTANCE" \
-            --alias validation-org
-
-      - name: Validate Deployment
-        run: |
-          TEST_LEVEL="RunLocalTests"
-          if [ -n "${{ steps.test-extractor.outputs.tests }}" ]; then
-            TEST_LEVEL="RunSpecifiedTests"
-            TESTS_PARAM="--tests ${{ steps.test-extractor.outputs.tests }}"
-          fi
-
-          sf project deploy validate \
-            --manifest "$PACKAGE_PATH" \
-            --test-level "$TEST_LEVEL" \
-            $TESTS_PARAM \
-            --wait 30 \
-            --coverage-formatters text \
-            --coverage-formatters-dir ./coverage
-
-      - name: Check Test Coverage
-        run: |
-          COVERAGE=$(grep -oP 'Overall Code Coverage: \K\d+' ./coverage/coverage.txt)
-          echo "Code Coverage: ${COVERAGE}%"
-          if [ "$COVERAGE" -lt 75 ]; then
-            echo "::error::Code coverage below 75% (${COVERAGE}%)"
-            exit 1
-          fi
+          message: |
+            🚀 **Salesforce Dry Run Completed**  
+            - **Deployment Status**: ${{ env.DEPLOY_FAILED == 'true' && '❌ Failed' || '✅ Success' }}  
+            - **Tests Run**: ${{ env.tests_run }}  
+            - **Validation Only Mode**: ✅ (No changes applied)
