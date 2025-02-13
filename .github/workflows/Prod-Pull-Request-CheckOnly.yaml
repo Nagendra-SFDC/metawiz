@@ -22,15 +22,11 @@ jobs:
         run: |
           echo "${{ secrets.SF_PRIVATE_KEY }}" > server.key
 
-      - name: Authenticate with Salesforce via JWT
+        - name: Authenticate Salesforce
         run: |
-           sfdx force:auth:jwt:grant \
-            --client-id ${{ secrets.PROD_CONSUMER_KEY }} \
-            --jwt-key-file ${{ secrets.JWT_SERVER_KEY }} \
-            --username ${{ secrets.PROD_USER_ADMIN }} \
-            --instance-url ${{ secrets.PROD_INSTANCE_URL }} \
-            --setdefaultdevhubusername \
-            --setalias my-dev-hub
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt --username "${{ secrets.DEPLOYMENT_USER_NAME }}" --jwt-key-file server.key --client-id "${{ secrets.CONSUMER_KEY }}" --instance-url "${{ secrets.INSTANCE_URL }}" --set-default
+
 
       - name: Validate Deployment (Dry Run)
         run: |
