@@ -6,14 +6,10 @@ public with sharing class myclassTest {
         List<RealEstateProperty.Property> properties = RealEstateProperty.getSampleProperties();
         System.assertEquals(3, properties.size(), 'Expected 3 sample properties');
     }         
-                                                            
 
-<<<<<<< HEAD
+
     @IsTest                                                                                                                             
 
-=======
-    @IsTest                                                                                                                     
->>>>>>> c1b17eb44f748533ccf50171e914cfe3df64eeea
 
     public static void testUpdatePropertyPrice() {
         String response = RealEstateProperty.updatePropertyPrice('Villa A', 550000);
