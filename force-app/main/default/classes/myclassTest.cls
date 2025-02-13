@@ -8,8 +8,12 @@ public with sharing class myclassTest {
     }         
                                                             
 
+<<<<<<< HEAD
     @IsTest                                                                                                                             
 
+=======
+    @IsTest                                                                                                                     
+>>>>>>> c1b17eb44f748533ccf50171e914cfe3df64eeea
 
     public static void testUpdatePropertyPrice() {
         String response = RealEstateProperty.updatePropertyPrice('Villa A', 550000);

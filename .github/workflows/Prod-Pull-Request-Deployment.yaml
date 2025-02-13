@@ -1,0 +1,87 @@
+name: Deploy to sffnoobs environment on push to main
+
+on:
+  push:
+    branches: [ main ]
+  
+  workflow_dispatch:  # Allows manual rollback trigger
+    inputs:
+      rollback:
+        description: "Rollback to previous version"
+        required: false
+        default: "false"
+
+jobs:
+  Deploy-to-sffnoobs-environment:
+    runs-on: ubuntu-latest
+    environment: sffnoobs
+    steps:
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: 'Checkout source code'
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: 'Install Salesforce CLI'
+        run: npm install @salesforce/cli --global
+
+      - name: 'Install sfdx git delta'
+        run: |
+          echo Y | sfdx plugins:install sfdx-git-delta
+          sfdx plugins
+
+      - name: 'Backup Current Deployment Before Deploying'
+        run: |
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          ROLLBACK_BRANCH="rollback-$TIMESTAMP"
+
+          # Configure GitHub authentication
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "github-actions"
+
+          # Ensure we are on the main branch before creating a rollback branch
+          git checkout main
+
+          # Create rollback branch
+          git checkout -b $ROLLBACK_BRANCH
+
+          # Push rollback branch
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $ROLLBACK_BRANCH
+          
+          echo "[INFO] Backup branch $ROLLBACK_BRANCH created."
+
+      - name: 'Authenticate Salesforce'
+        run: |
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt --username "${{ secrets.PROD_USER_ADMIN }}" --jwt-key-file server.key --client-id "${{ secrets.PROD_CONSUMER_KEY }}" --instance-url "${{ secrets.PROD_INSTANCE_URL }}" --set-default
+
+      - name: 'Create delta packages'
+        run: | 
+          mkdir -p changed-sources
+          sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/main/default/
+          echo "[INFO] Diff generated"
+
+      - name: 'validate environment with local tests'
+        run: |
+          sf project deploy start -x manifest/Testpackage.xml \
+            --test-level RunSpecifiedTests --dry-run --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+
+      - name: Install jq (For JSON Parsing)
+        run: sudo apt-get install -y jq
+
+      - name: Parse Test Results
+        run: |
+          TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun' result.json)
+          echo "Tests Run: $TEST_RUN"
+          if [[ "$TEST_RUN" -eq "0" ]]; then
+            echo "No tests were executed! Failing the job."
+            exit 1
+          fi
+
+
+     
+
