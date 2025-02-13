@@ -1,6 +1,7 @@
+@isTest
 public with sharing class testexampleTest {
-    @test
-    public testexampleTest() {
+    @isTest
+    public testexample() {
                           
     }
 }
