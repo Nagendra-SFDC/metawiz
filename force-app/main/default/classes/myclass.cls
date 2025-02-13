@@ -8,13 +8,14 @@ public with sharing class myclass {
         public Property(String name, Decimal price, String status) {
             this.name = name;
             this.price = price;
-<<<<<<< HEAD
-                    this.status = status;
-=======
-            this.status = status;
 
->>>>>>> 48c07156a9b91f18df09a3eef4abb50e7efff0f4
+                    this.status = status;
+
+         
+
+
         }
+
     }
 
     // Method to get a list of sample properties
