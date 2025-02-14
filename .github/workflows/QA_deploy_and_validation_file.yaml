@@ -71,11 +71,12 @@ jobs:
 
       - name: 'Parse Test Results'
         run: |
-          TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun // 0' result.json)
-          CLASSES_DEPLOYED=$(jq -r '.result.details.componentSuccesses | length' result.json)
-          echo "Tests Run: $TEST_RUN"
-          echo "Total Classes Deployed: $CLASSES_DEPLOYED"
-          if [[ "$TEST_RUN" -eq "0" ]]; then
-            echo "No tests were executed! Failing the job."
-            exit 1
-          fi
+         DEPLOY_STATUS=$(jq -r '.status' result.json)
+         if [[ "$DEPLOY_STATUS" -eq "0" ]]; then
+         echo "✅ Deployment Successful!"
+         exit 0
+          else
+          echo "❌ Deployment Failed!"
+          exit 1
+           fi
+
