@@ -57,7 +57,7 @@ jobs:
       - name: 'Authenticate Salesforce'
         run: |
           echo "${{ secrets.QA_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt --username "${{ secrets.PROD_USER_ADMIN }}" --jwt-key-file server.key --client-id "${{ secrets.QA_CONSUMER_KEY }}" --instance-url "${{ secrets.QA_INSTANCE_URL }}" --set-default
+          sf org login jwt --username "${{ secrets.QA_ADMIN_USER }}" --jwt-key-file server.key --client-id "${{ secrets.QA_CONSUMER_KEY }}" --instance-url "${{ secrets.QA_INSTANCE_URL }}" --set-default
 
       - name: 'Create delta packages'
         run: | 
