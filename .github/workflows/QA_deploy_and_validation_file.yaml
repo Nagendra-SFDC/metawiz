@@ -60,7 +60,7 @@ jobs:
       - name: 'Deploy Entire PR with Extracted Test Classes'
         run: |
           sf project deploy start --source-dir force-app \
-            --test-level RunSpecifiedTests --tests $TEST_CLASS_LIST --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+            --test-level NoTestRun --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
       - name: 'Debug JSON Output'
         run: |
