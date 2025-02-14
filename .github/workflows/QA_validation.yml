@@ -56,7 +56,7 @@ jobs:
 
       - name: 'Authenticate Salesforce'
         run: |
-          echo "${{ secrets.QA_SERVER_KEY }}" | tr -d '\r' > server.key
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
           sf org login jwt --username "${{ secrets.QA_ADMIN_USER }}" --jwt-key-file server.key --client-id "${{ secrets.QA_CONSUMER_KEY }}" --instance-url "${{ secrets.QA_INSTANCE_URL }}" --set-default
 
       - name: 'Create delta packages'
@@ -65,14 +65,7 @@ jobs:
           sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta --source force-app/main/default/
           echo "[INFO] Diff generated"
 
-      - name: 'Extract Test Class Names from manifest/Testpackage.xml'
-        run: |
-          TEST_CLASSES=$(grep -oP '(?<=<members>).*?(?=</members>)' manifest/Testpackage.xml | grep "Test")
-          TEST_CLASS_LIST=$(echo $TEST_CLASSES | tr '\n' ',' | sed 's/,$//')
-          NUM_TEST_CLASSES=$(echo "$TEST_CLASSES" | wc -l)
-          echo "TEST_CLASS_LIST=$TEST_CLASS_LIST" >> $GITHUB_ENV
-          echo "NUM_TEST_CLASSES=$NUM_TEST_CLASSES" >> $GITHUB_ENV
-          echo "Extracted $NUM_TEST_CLASSES test classes: $TEST_CLASS_LIST"
+     
 
       - name: 'Validate Entire PR (Dry Run) with Extracted Test Classes'
         run: |
