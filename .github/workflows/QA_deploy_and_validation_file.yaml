@@ -56,12 +56,12 @@ jobs:
           echo "NUM_TEST_CLASSES=$NUM_TEST_CLASSES" >> $GITHUB_ENV
           echo "Extracted $NUM_TEST_CLASSES test classes: $TEST_CLASS_LIST"
 
-
-      - name: 'Deploy Entire PR with Extracted Test Classes'
+      - name: 'Deploy to Salesforce'
         run: |
-               sf project deploy start --source-dir force-app \
-                --test-level NoTestRun --wait 10 --ignore-conflicts --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
-                continue-on-error: true
+          sf project deploy start --source-dir force-app \
+            --test-level NoTestRun --wait 10 --ignore-conflicts --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+        shell: bash
+        continue-on-error: true
 
       - name: 'Debug JSON Output'
         run: |    
@@ -72,12 +72,11 @@ jobs:
 
       - name: 'Parse Test Results'
         run: |
-         DEPLOY_STATUS=$(jq -r '.status' result.json)
-         if [[ "$DEPLOY_STATUS" -eq "0" ]]; then
-         echo "✅ Deployment Successful!"
-         exit 0
+          DEPLOY_STATUS=$(jq -r '.status' result.json)
+          if [[ "$DEPLOY_STATUS" -eq "0" ]]; then
+            echo "✅ Deployment Successful!"
+            exit 0
           else
-          echo "❌ Deployment Failed!"
-          exit 1
-           fi
-
+            echo "❌ Deployment Failed!"
+            exit 1
+          fi
