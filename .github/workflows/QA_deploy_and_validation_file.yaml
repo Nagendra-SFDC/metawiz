@@ -59,11 +59,12 @@ jobs:
 
       - name: 'Deploy Entire PR with Extracted Test Classes'
         run: |
-          sf project deploy start --source-dir force-app \
-            --test-level NoTestRun --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+               sf project deploy start --source-dir force-app \
+                --test-level NoTestRun --wait 10 --ignore-conflicts --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+                continue-on-error: true
 
       - name: 'Debug JSON Output'
-        run: |
+        run: |    
           cat result.json
 
       - name: 'Install jq (For JSON Parsing)'
