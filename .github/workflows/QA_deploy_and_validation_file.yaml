@@ -38,7 +38,7 @@ jobs:
 
       - name: 'Authenticate Salesforce'
         run: |
-          echo "${{ vars.FSC_KEY }}" | tr -d '\r' > server.key
+          echo "${{ vars.PRIVATEKEY }}" | tr -d '\r' > server.key
           sf org login jwt --username "${{ vars.FSC_USER }}" --jwt-key-file server.key --client-id "${{ vars.FSC_CUNSUMER_KEY }}" --instance-url "${{ vars.FSC_INSTANCE}}" --set-default
 
       - name: 'Create delta packages'
