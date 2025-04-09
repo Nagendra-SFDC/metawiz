@@ -6,20 +6,36 @@ on:
       - release/*  # Trigger on push to any release branch
 
 jobs:
-  create-pull-request:
-    runs-on: ubuntu-latest
+  create_pull_request:
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
     steps:
-      - name: Checkout the repository
-        uses: actions/checkout@v2
+      # You don't strictly need to checkout the code to use 'gh pr create'
+      # unless you need repo context for other steps, but it's good practice.
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Create Pull Request from Release to Main
-        uses: peter-evans/create-pull-request@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          base: main
-          head: ${{ github.ref_name }}
-          title: 'Release to Main'
-          body: 'Automated pull request from release branch to main branch'
-          labels: 'main'
-          create-when-empty: true
+      - name: Create Pull Request if none exists
+        env:
+          # The GITHUB_TOKEN is automatically provided by GitHub Actions
+          # It has permissions to create PRs in the repository.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking if PR from release to main already exists..."
+          # List open PRs from release to main. If any exist, 'gh pr list' will exit with 0.
+          # We use '|| true' to prevent the script from failing if no PRs are found (which makes 'gh pr list' exit with 1).
+          EXISTING_PR=$(gh pr list --head release --base main --state open --json number --jq '. | length') || true
 
+          if [ "$EXISTING_PR" -eq "0" ]; then
+            echo "No open PR found from release to main. Creating one..."
+            gh pr create \
+              --base main \
+              --head release \
+              --title "Merge release branch into main" \
+              --body "This PR was automatically created because changes were pushed to the 'release' branch. Please review and merge."
+            echo "PR creation command executed."
+          else
+            echo "An open PR from release to main already exists. Skipping creation."
+          fi
+        # Optional: If you *always* want the workflow step to succeed even if 'gh pr create' fails
+        # (e.g., due to permissions or other issues after the check), you could add:
+        # continue-on-error: true
