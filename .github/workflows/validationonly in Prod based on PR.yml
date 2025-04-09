@@ -1,0 +1,118 @@
+name: ValidateOnly To Staging
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
+
+jobs:
+  Validate-to-Staging-environment:
+    runs-on: ubuntu-latest
+    environment: main
+    steps:
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: 'Checkout PR source code'
+        uses: actions/checkout@v3
+        # This checks out the head commit of the pull request
+        with:
+          fetch-depth: 2
+
+      - name: 'Fetch Staging Branch'
+        run: git fetch origin Staging
+
+      - name: 'Install Salesforce CLI'
+        run: npm install @salesforce/cli --global
+
+      - name: 'Install sfdx git delta'
+        run: |
+          echo Y | sfdx plugins:install sfdx-git-delta
+          sfdx plugins
+
+      - name: 'Authenticate Salesforce'
+        run: |
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
+          sf org login jwt --username "${{ secrets.PROD_USER_ADMIN }}" --jwt-key-file server.key --client-id "${{ secrets.PROD_CONSUMER_KEY }}" --instance-url "${{ secrets.PROD_INSTANCE_URL }}" --set-default
+
+      - name: 'Identify Changed Files'
+        run: |
+          # Compare changes between the PR branch (HEAD) and the base Staging branch
+          git diff --name-only origin/Staging HEAD > changed-files.txt
+          cat changed-files.txt
+          if [[ ! -s changed-files.txt ]]; then
+            echo "No changed files detected. Skipping deployment."
+            echo "NO_CHANGES=true" >> $GITHUB_ENV
+          fi
+
+      - name: 'Generate Deployment Package'
+        if: env.NO_CHANGES != 'true'
+        run: |
+          mkdir -p changed-sources
+          while read file; do
+            if [[ $file == force-app/* ]]; then
+              cp --parents "$file" changed-sources/
+            fi
+          done < changed-files.txt
+          ls -R changed-sources/
+          if [[ ! "$(ls -A changed-sources/ 2>/dev/null)" ]]; then
+            echo "No deployable metadata found in force-app. Skipping deployment."
+            echo "NO_CHANGES=true" >> $GITHUB_ENV
+          fi
+
+      - name: 'Extract Test Class Names'
+        if: env.NO_CHANGES != 'true'
+        run: |
+          if [[ -f "manifest/Testpackage.xml" ]]; then
+            TEST_CLASSES=$(grep -oP '(?<=<members>).*?(?=</members>)' manifest/Testpackage.xml | grep "Test" || true)
+            if [[ -z "$TEST_CLASSES" ]]; then
+              echo "No Test Classes Found. Skipping Tests."
+              echo "TEST_CLASS_LIST=" >> $GITHUB_ENV
+            else
+              TEST_CLASS_LIST=$(echo $TEST_CLASSES | tr '\n' ',' | sed 's/,$//')
+              echo "TEST_CLASS_LIST=$TEST_CLASS_LIST" >> $GITHUB_ENV
+              echo "Extracted Test Classes: $TEST_CLASS_LIST"
+            fi
+          else
+            echo "Testpackage.xml not found. Skipping Tests."
+            echo "TEST_CLASS_LIST=" >> $GITHUB_ENV
+          fi
+
+      - name: 'Dry Run Deployment'
+        if: env.NO_CHANGES != 'true'
+        run: |
+          echo "[INFO] Dry Run: Deploying only changes between PR and Staging..."
+          if [[ -n "$TEST_CLASS_LIST" ]]; then
+            sf project deploy start --source-dir changed-sources/force-app \
+              --dry-run --test-level RunSpecifiedTests --tests $TEST_CLASS_LIST --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+          else
+            sf project deploy start --source-dir changed-sources/force-app \
+              --dry-run --test-level NoTestRun --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+          fi
+
+      - name: 'Debug JSON Output'
+        if: env.NO_CHANGES != 'true'
+        run: cat result.json
+
+      - name: 'Install jq (For JSON Parsing)'
+        if: env.NO_CHANGES != 'true'
+        run: sudo apt-get install -y jq
+
+      - name: 'Parse Deployment Results'
+        if: env.NO_CHANGES != 'true'
+        run: |
+          TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun // 0' result.json)
+          CLASSES_DEPLOYED=$(jq -r '.result.details.componentSuccesses | length' result.json)
+          echo "Tests Run: $TEST_RUN"
+          echo "Total Classes Deployed: $CLASSES_DEPLOYED"
+          if [[ "$TEST_RUN" -eq "0" && -n "$TEST_CLASS_LIST" ]]; then
+            echo "No tests were executed despite test classes being specified! Failing the job."
+            exit 1
+          fi
+          if [[ "$DEPLOY_FAILED" == "true" ]]; then
+            echo "Deployment failed. Check logs for details."
+            exit 1
+          fi
