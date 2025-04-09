@@ -33,7 +33,7 @@ jobs:
               --title "Merge release branch into main" \
               --body "This PR was automatically created because changes were pushed to the 'release' branch. Please review and merge."
             echo "PR creation command executed."
-              --label "$PR_LABEL"
+              --label "main"
           else
             echo "An open PR from release to main already exists. Skipping creation."
           fi
