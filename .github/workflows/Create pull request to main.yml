@@ -16,8 +16,8 @@ jobs:
         uses: peter-evans/create-pull-request@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          base: main
-          head: ${{ github.ref_name }}
+          base: "main"
+          head: "${{ github.ref_name }}"
           title: 'Release to Main'
           body: 'Automated pull request from release branch to main branch'
           labels: 'main'
