@@ -1,4 +1,4 @@
-name: ValidateOnly To Staging
+name: ValidateOnly To Prod
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  Validate-to-Staging-environment:
+  Validate-to-Prod-environment:
     runs-on: ubuntu-latest
     environment: main
     steps:
