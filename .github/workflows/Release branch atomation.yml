@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout the repository
         uses: actions/checkout@v3
 
-      - name: Set up Git
+      - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -36,14 +36,14 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create release branch if not exists
+      - name: Create release branch if it doesn't exist
         if: steps.check_branch.outputs.exists == 'false'
         run: |
           git fetch origin main
           git checkout -b "${{ github.event.inputs.release_branch_name }}" origin/main
           git push origin "${{ github.event.inputs.release_branch_name }}"
 
-      - name: Create Pull Requests from Feature Branches to Release Branch
+      - name: Create pull requests from feature branches
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
