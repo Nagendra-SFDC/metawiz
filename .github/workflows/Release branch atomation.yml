@@ -10,6 +10,10 @@ on:
         description: 'Name of the release branch'
         required: true
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   create_prs:
     runs-on: ubuntu-latest
@@ -39,21 +43,18 @@ jobs:
           git checkout -b "${{ github.event.inputs.release_branch_name }}" origin/main
           git push origin "${{ github.event.inputs.release_branch_name }}"
 
-          - name: Create Pull Requests
+      - name: Create Pull Requests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           IFS=',' read -ra FEATURES <<< "${{ github.event.inputs.feature_branch_names }}"
-          IFS=',' read -ra BASES <<< "${{ github.event.inputs.release_branch_name }}"
+          RELEASE_BRANCH="${{ github.event.inputs.release_branch_name }}"
           
-          for BASE in "${BASES[@]}"; do
-            for FEATURE in "${FEATURES[@]}"; do
-              echo "Creating PR from $FEATURE to $BASE"
-              gh pr create \
-                --base "$BASE" \
-                --head "$FEATURE" \
-                --title "Merge $FEATURE into $BASE" \
-                --body "Automated PR from $FEATURE to $BASE"
-            done
+          for FEATURE in "${FEATURES[@]}"; do
+            echo "Creating PR from $FEATURE to $RELEASE_BRANCH"
+            gh pr create \
+              --base "$RELEASE_BRANCH" \
+              --head "$FEATURE" \
+              --title "Merge $FEATURE into $RELEASE_BRANCH" \
+              --body "Automated PR from $FEATURE to $RELEASE_BRANCH"
           done
-
