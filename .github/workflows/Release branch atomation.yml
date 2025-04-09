@@ -1,0 +1,53 @@
+name: Create Pull Requests for Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      feature_branch_names:
+        description: 'Comma-separated list of feature branch names'
+        required: true
+      release_branch_name:
+        description: 'Name of the release branch'
+        required: true
+
+jobs:
+  create_prs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check if release branch exists
+        id: check_branch
+        run: |
+          if git ls-remote --exit-code --heads origin "${{ github.event.inputs.release_branch_name }}"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release branch if not exists
+        if: steps.check_branch.outputs.exists == 'false'
+        run: |
+          git fetch origin main
+          git checkout -b "${{ github.event.inputs.release_branch_name }}" origin/main
+          git push origin "${{ github.event.inputs.release_branch_name }}"
+
+      - name: Create Pull Requests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IFS=',' read -ra FEATURES <<< "${{ github.event.inputs.feature_branch_names }}"
+          for BRANCH in "${FEATURES[@]}"; do
+            gh pr create \
+              --base "${{ github.event.inputs.release_branch_name }}" \
+              --head "$BRANCH" \
+              --title "Merge $BRANCH into ${{ github.event.inputs.release_branch_name }}" \
+              --body "Automated PR from $BRANCH to ${{ github.event.inputs.release_branch_name }}"
+          done
