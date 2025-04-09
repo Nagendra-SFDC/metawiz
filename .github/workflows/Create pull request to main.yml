@@ -2,8 +2,8 @@ name: Pull request Release to Main
 
 on:
   push:
-    branches:
-      - release/*  # Trigger on push to release branches
+    branches: [release/*]
+        # Trigger on push to release branches
 
 jobs:
   create-pull-request-main:
