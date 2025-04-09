@@ -21,3 +21,5 @@ jobs:
           title: 'Release to Main'
           body: 'Automated pull request from release branch to main branch'
           labels: 'main'
+          create-when-empty: true
+
