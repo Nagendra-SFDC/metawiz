@@ -1,33 +1,23 @@
-name: Release Branch PR to Main
+name: Create Pull Request from Release to Main
 
 on:
   push:
     branches:
-      - 'release/**'
+      - release/*  # Trigger on push to any release branch
+
 jobs:
   create-pull-request:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v2
-        
-      - name: Set up Git
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-        
+
       - name: Create Pull Request from Release to Main
-        run: |
-          PR_BRANCH="release/$(date +'%Y%m%d%H%M%S')"
-          git checkout -b "$PR_BRANCH"
-          git push origin "$PR_BRANCH"
-        
-      - name: Create Pull Request via GitHub CLI
         uses: peter-evans/create-pull-request@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          base: main
-          head: ${{ github.ref }}
+          base: main         # Target branch for the PR (main)
+          head: ${{ github.ref }}  # Source branch for the PR (release/*)
           title: 'Release to Main'
-          body: 'Automated PR from Release branch to Main'
-          labels: 'main'
+          body: 'Automated pull request from release branch to main branch'
+          labels: 'main'     # Add the 'main' label to the PR
