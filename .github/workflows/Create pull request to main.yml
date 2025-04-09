@@ -1,34 +1,25 @@
-name: Pull request Release to Main
+# .github/workflows/release-to-main.yml
+name: Release Branch PR to Main
 
 on:
   push:
-    branches: [release/*]
-        # Trigger on push to release branches
+    branches:
+      - 'release/**'
 
 jobs:
-  create-pull-request-main:
+  create-pull-request:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout the repository
-        uses: actions/checkout@v2
-        
-      - name: Set up Git
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-        
-      - name: Create Pull Request from Release to Main
-        run: |
-          PR_BRANCH="release/$(date +'%Y%m%d%H%M%S')"
-          git checkout -b "$PR_BRANCH"
-          git push origin "$PR_BRANCH"
-        
-      - name: Create Pull Request via GitHub CLI
-        uses: peter-evans/create-pull-request@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Create Pull Request to Main
+        uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          base: main
-          head: ${{ github.ref }}
-          title: 'Release to Main'
-          body: 'Automated PR from Release branch to Main'
-          labels: 'main'
+          source: ${{ github.ref_name }}
+          target: main
+          title: 'Merge ${{ github.ref_name }} into main'
+          body: 'Auto-generated PR from ${{ github.ref_name }} to main'
+          draft: false
