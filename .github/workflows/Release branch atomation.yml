@@ -68,5 +68,5 @@ jobs:
               --head "$FEATURE" \
               --title "Merge $FEATURE into $RELEASE_BRANCH" \
               --body "Automated PR from $FEATURE to $RELEASE_BRANCH" || echo "PR creation failed for $FEATURE → $RELEASE_BRANCH"
-              --label "$PR_LABEL"
+             
           done
