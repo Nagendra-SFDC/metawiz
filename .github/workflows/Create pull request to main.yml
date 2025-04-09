@@ -29,7 +29,7 @@ jobs:
             echo "No open PR found from release to main. Creating one..."
             gh pr create \
               --base main \
-              --head release \
+              --head ${{ github.ref_name }} \
               --title "Merge release branch into main" \
               --body "This PR was automatically created because changes were pushed to the 'release' branch. Please review and merge."
             echo "PR creation command executed."
