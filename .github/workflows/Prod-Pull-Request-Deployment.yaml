@@ -1,15 +1,7 @@
 name: Deploy to sffnoobs environment on push to main
 
 on:
-  push:
-    branches: [  ]
   
-  workflow_dispatch:  # Allows manual rollback trigger
-    inputs:
-      rollback:
-        description: "Rollback to previous version"
-        required: false
-        default: "false"
 
 jobs:
   Deploy-to-sffnoobs-environment:
