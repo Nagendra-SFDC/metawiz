@@ -1,3 +1,9 @@
+name: Release Branch PR to Main
+
+on:
+  push:
+    branches:
+      - 'release/**'
 jobs:
   create-pull-request:
     runs-on: ubuntu-latest
