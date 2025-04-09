@@ -39,15 +39,21 @@ jobs:
           git checkout -b "${{ github.event.inputs.release_branch_name }}" origin/main
           git push origin "${{ github.event.inputs.release_branch_name }}"
 
-      - name: Create Pull Requests
+          - name: Create Pull Requests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           IFS=',' read -ra FEATURES <<< "${{ github.event.inputs.feature_branch_names }}"
-          for BRANCH in "${FEATURES[@]}"; do
-            gh pr create \
-              --base "${{ github.event.inputs.release_branch_name }}" \
-              --head "$BRANCH" \
-              --title "Merge $BRANCH into ${{ github.event.inputs.release_branch_name }}" \
-              --body "Automated PR from $BRANCH to ${{ github.event.inputs.release_branch_name }}"
+          IFS=',' read -ra BASES <<< "${{ github.event.inputs.release_branch_name }}"
+          
+          for BASE in "${BASES[@]}"; do
+            for FEATURE in "${FEATURES[@]}"; do
+              echo "Creating PR from $FEATURE to $BASE"
+              gh pr create \
+                --base "$BASE" \
+                --head "$FEATURE" \
+                --title "Merge $FEATURE into $BASE" \
+                --body "Automated PR from $FEATURE to $BASE"
+            done
           done
+
