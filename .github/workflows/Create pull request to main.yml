@@ -19,6 +19,7 @@ jobs:
           # The GITHUB_TOKEN is automatically provided by GitHub Actions
           # It has permissions to create PRs in the repository.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_LABEL: "main"
         run: |
           echo "Checking if PR from release to main already exists..."
           # List open PRs from release to main. If any exist, 'gh pr list' will exit with 0.
@@ -33,6 +34,7 @@ jobs:
               --title "Merge release branch into main" \
               --body "This PR was automatically created because changes were pushed to the 'release' branch. Please review and merge."
             echo "PR creation command executed."
+            --label "$PR_LABEL" # <-- Added label flag here
           else
             echo "An open PR from release to main already exists. Skipping creation."
           fi
