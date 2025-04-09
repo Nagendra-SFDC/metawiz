@@ -4,21 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       feature_branch_names:
-        description: 'Comma-separated list of feature branch names'
+        description: 'Comma-separated list of feature branch names (e.g., feature/v.33,feature/v.22)'
         required: true
       release_branch_name:
-        description: 'Name of the release branch'
+        description: 'Name of the release branch (e.g., release/v.34)'
         required: true
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   create_prs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout the repository
         uses: actions/checkout@v3
 
-      - name: Set up Git
+      - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -32,22 +36,25 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create release branch if not exists
+      - name: Create release branch if it doesn't exist
         if: steps.check_branch.outputs.exists == 'false'
         run: |
           git fetch origin main
           git checkout -b "${{ github.event.inputs.release_branch_name }}" origin/main
           git push origin "${{ github.event.inputs.release_branch_name }}"
 
-      - name: Create Pull Requests
+      - name: Create pull requests from feature branches
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           IFS=',' read -ra FEATURES <<< "${{ github.event.inputs.feature_branch_names }}"
-          for BRANCH in "${FEATURES[@]}"; do
+          RELEASE_BRANCH="${{ github.event.inputs.release_branch_name }}"
+
+          for FEATURE in "${FEATURES[@]}"; do
+            echo "Creating PR from $FEATURE to $RELEASE_BRANCH"
             gh pr create \
-              --base "${{ github.event.inputs.release_branch_name }}" \
-              --head "$BRANCH" \
-              --title "Merge $BRANCH into ${{ github.event.inputs.release_branch_name }}" \
-              --body "Automated PR from $BRANCH to ${{ github.event.inputs.release_branch_name }}"
+              --base "$RELEASE_BRANCH" \
+              --head "$FEATURE" \
+              --title "Merge $FEATURE into $RELEASE_BRANCH" \
+              --body "Automated PR from $FEATURE to $RELEASE_BRANCH"
           done
