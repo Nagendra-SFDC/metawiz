@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 2
 
       - name: 'Fetch Staging Branch'
-        run: git fetch origin Staging
+        run: git fetch origin main
 
       - name: 'Install Salesforce CLI'
         run: npm install @salesforce/cli --global
