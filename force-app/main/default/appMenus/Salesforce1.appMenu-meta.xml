@@ -8,7 +8,7 @@
         <name>Feed</name>
         <type>StandardAppMenuItem</type>
     </appMenuItems>
-    <appMenuItems>
+    <appMenuItems>                     
         <name>MyDay</name>
         <type>StandardAppMenuItem</type>
     </appMenuItems>
