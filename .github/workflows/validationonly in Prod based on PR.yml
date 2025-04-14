@@ -1,4 +1,4 @@
-name: ValidateOnly To Staging
+name: ValidateOnly To PROD
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  Validate-to-Staging-environment:
+  Validate-to-PROD-environment:
     runs-on: ubuntu-latest
     environment: main
     steps:
@@ -22,8 +22,8 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: 'Fetch Staging Branch'
-        run: git fetch origin Staging
+      - name: 'Fetch PROD Branch'
+        run: git fetch origin PROD
 
       - name: 'Install Salesforce CLI'
         run: npm install @salesforce/cli --global
@@ -40,8 +40,8 @@ jobs:
 
       - name: 'Identify Changed Files'
         run: |
-          # Compare changes between the PR branch (HEAD) and the base Staging branch
-          git diff --name-only origin/Staging HEAD > changed-files.txt
+          # Compare changes between the PR branch (HEAD) and the base PROD branch
+          git diff --name-only origin/main HEAD > changed-files.txt
           cat changed-files.txt
           if [[ ! -s changed-files.txt ]]; then
             echo "No changed files detected. Skipping deployment."
