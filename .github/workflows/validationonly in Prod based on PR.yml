@@ -6,33 +6,54 @@ on:
     branches:
       - main  # Only trigger for PRs targeting main
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   Validate-to-Main-environment:
     runs-on: ubuntu-latest
-    environment: Production  # Assuming main corresponds to Production
+    environment: Production
     steps:
-      - name: 'Setup Node.js'
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: 'Checkout PR source code'
+      - name: Checkout PR source code
         uses: actions/checkout@v3
         with:
           fetch-depth: 2
 
-      - name: 'Fetch Main Branch'
+      - name: Confirm Workflow Trigger
+        run: echo "Workflow triggered for PR to main branch."
+
+      - name: Debug PR Details
+        run: |
+          echo "PR Base Branch: ${{ github.base_ref }}"
+          echo "PR Head Branch: ${{ github.head_ref }}"
+          echo "Repository: ${{ github.repository }}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Fetch Main Branch
         run: git fetch origin main
 
-      - name: 'Install Salesforce CLI'
+      - name: Install Salesforce CLI
         run: npm install @salesforce/cli --global
 
-      - name: 'Install sfdx git delta'
+      - name: Install sfdx git delta
         run: |
           echo Y | sfdx plugins:install sfdx-git-delta
           sfdx plugins
 
-      - name: 'Authenticate Salesforce'
+      - name: Verify Secrets and Variables
+        run: |
+          if [[ -z "${{ secrets.SF_PRIVATE_KEY_PROD }}" ]]; then echo "SF_PRIVATE_KEY_PROD is not set"; exit 1; fi
+          if [[ -z "${{ vars.SF_USERNAME_PROD }}" ]]; then echo "SF_USERNAME_PROD is not set"; exit 1; fi
+          if [[ -z "${{ vars.SF_CONSUMER_KEY_PROD }}" ]]; then echo "SF_CONSUMER_KEY_PROD is not set"; exit 1; fi
+          if [[ -z "${{ vars.SF_INSTANCE_PROD }}" ]]; then echo "SF_INSTANCE_PROD is not set"; exit 1; fi
+          echo "All required secrets and variables are set."
+
+      - name: Authenticate Salesforce
         run: |
           echo "${{ secrets.SF_PRIVATE_KEY_PROD }}" | tr -d '\r' > server.key
           sf org login jwt --username "${{ vars.SF_USERNAME_PROD }}" \
@@ -41,7 +62,7 @@ jobs:
             --instance-url "${{ vars.SF_INSTANCE_PROD }}" \
             --set-default
 
-      - name: 'Identify Changed Files'
+      - name: Identify Changed Files
         run: |
           git diff --name-only origin/main HEAD > changed-files.txt
           cat changed-files.txt
@@ -50,7 +71,7 @@ jobs:
             echo "NO_CHANGES=true" >> $GITHUB_ENV
           fi
 
-      - name: 'Generate Deployment Package'
+      - name: Generate Deployment Package
         if: env.NO_CHANGES != 'true'
         run: |
           mkdir -p changed-sources
@@ -65,7 +86,7 @@ jobs:
             echo "NO_CHANGES=true" >> $GITHUB_ENV
           fi
 
-      - name: 'Extract Test Class Names'
+      - name: Extract Test Class Names
         if: env.NO_CHANGES != 'true'
         run: |
           if [[ -f "manifest/Testpackage.xml" ]]; then
@@ -83,7 +104,7 @@ jobs:
             echo "TEST_CLASS_LIST=" >> $GITHUB_ENV
           fi
 
-      - name: 'Dry Run Deployment'
+      - name: Dry Run Deployment
         if: env.NO_CHANGES != 'true'
         run: |
           echo "[INFO] Dry Run: Deploying only changes to main..."
@@ -95,15 +116,15 @@ jobs:
               --dry-run --test-level NoTestRun --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
           fi
 
-      - name: 'Debug JSON Output'
+      - name: Debug JSON Output
         if: env.NO_CHANGES != 'true'
         run: cat result.json
 
-      - name: 'Install jq (For JSON Parsing)'
+      - name: Install jq (For JSON Parsing)
         if: env.NO_CHANGES != 'true'
         run: sudo apt-get install -y jq
 
-      - name: 'Parse Deployment Results'
+      - name: Parse Deployment Results
         if: env.NO_CHANGES != 'true'
         run: |
           TEST_RUN=$(jq -r '.result.details.runTestResult.numTestsRun // 0' result.json)
