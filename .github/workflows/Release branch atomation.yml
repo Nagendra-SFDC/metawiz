@@ -45,7 +45,7 @@ jobs:
 
       - name: Create pull requests from feature branches
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ vars.GH_TOKEN }}
         run: |
           # Fetch all remote branches
           git fetch --all
