@@ -1,15 +1,15 @@
-name: ValidateOnly To PROD
+name: ValidateOnly To Main
 
 on:
   pull_request:
     types: [opened, synchronize]
     branches:
-      - main
+      - main  # Only trigger for PRs targeting main
 
 jobs:
-  Validate-to-PROD-environment:
+  Validate-to-Main-environment:
     runs-on: ubuntu-latest
-    environment: main
+    environment: Production  # Assuming main corresponds to Production
     steps:
       - name: 'Setup Node.js'
         uses: actions/setup-node@v3
@@ -18,12 +18,11 @@ jobs:
 
       - name: 'Checkout PR source code'
         uses: actions/checkout@v3
-        # This checks out the head commit of the pull request
         with:
           fetch-depth: 2
 
-      - name: 'Fetch PROD Branch'
-        run: git fetch origin PROD
+      - name: 'Fetch Main Branch'
+        run: git fetch origin main
 
       - name: 'Install Salesforce CLI'
         run: npm install @salesforce/cli --global
@@ -35,12 +34,15 @@ jobs:
 
       - name: 'Authenticate Salesforce'
         run: |
-          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt --username "${{ secrets.PROD_USER_ADMIN }}" --jwt-key-file server.key --client-id "${{ secrets.PROD_CONSUMER_KEY }}" --instance-url "${{ secrets.PROD_INSTANCE_URL }}" --set-default
+          echo "${{ secrets.SF_PRIVATE_KEY_PROD }}" | tr -d '\r' > server.key
+          sf org login jwt --username "${{ vars.SF_USERNAME_PROD }}" \
+            --jwt-key-file server.key \
+            --client-id "${{ vars.SF_CONSUMER_KEY_PROD }}" \
+            --instance-url "${{ vars.SF_INSTANCE_PROD }}" \
+            --set-default
 
       - name: 'Identify Changed Files'
         run: |
-          # Compare changes between the PR branch (HEAD) and the base PROD branch
           git diff --name-only origin/main HEAD > changed-files.txt
           cat changed-files.txt
           if [[ ! -s changed-files.txt ]]; then
@@ -84,7 +86,7 @@ jobs:
       - name: 'Dry Run Deployment'
         if: env.NO_CHANGES != 'true'
         run: |
-          echo "[INFO] Dry Run: Deploying only changes between PR and Staging..."
+          echo "[INFO] Dry Run: Deploying only changes to main..."
           if [[ -n "$TEST_CLASS_LIST" ]]; then
             sf project deploy start --source-dir changed-sources/force-app \
               --dry-run --test-level RunSpecifiedTests --tests $TEST_CLASS_LIST --wait 10 --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
