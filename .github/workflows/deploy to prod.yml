@@ -40,16 +40,16 @@ jobs:
           sf org login jwt --username "${{ secrets.QA_ADMIN_USER }}" --jwt-key-file server.key --client-id "${{ secrets.QA_CONSUMER_KEY}}" --instance-url "${{ secrets.QA_INSTANCE_URL }}" --set-default
 
       - name: 'Create delta packages between main and input release branch'
-  run: |
-    git fetch origin main
-    mkdir -p changed-sources
-    sf sgd source delta \
-      --to "refs/remotes/origin/${{ github.event.inputs.release_branch }}" \
-      --from "origin/main" \
-      --output "changed-sources" \
-      --generate-delta \
-      --source "force-app/main/default"
-    echo "[INFO] Delta created between origin/main and ${{ github.event.inputs.release_branch }}"
+        run: |
+           git fetch origin main
+           mkdir -p changed-sources
+           sf sgd source delta \
+           --to "refs/remotes/origin/${{ github.event.inputs.release_branch }}" \
+           --from "origin/main" \
+           --output "changed-sources" \
+           --generate-delta \
+           --source "force-app/main/default"
+           echo "[INFO] Delta created between origin/main and ${{ github.event.inputs.release_branch }}"
 
 
       - name: 'Extract Test Class Names'
