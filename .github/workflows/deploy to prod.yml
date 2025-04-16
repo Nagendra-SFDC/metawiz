@@ -8,12 +8,13 @@ on:
           Enter the release branch (e.g., release/v1.2.3). 
           CAUTION: This workflow deploys directly to PRODUCTION. Changes will affect your live Salesforce org and may impact users, data, or processes. Ensure you have tested in a sandbox, backed up your org, and reviewed changes before proceeding.
         required: true
-        default: "release/latest"  # Default branch if not specified
+        default: "release/latest"
 
 jobs:
   Deploy-to-PROD-environment:
     runs-on: ubuntu-latest
     environment: PROD
+
     steps:
       - name: 'Setup Node.js'
         uses: actions/setup-node@v3
@@ -23,7 +24,7 @@ jobs:
       - name: 'Checkout source code'
         uses: actions/checkout@v3
         with:
-          ref: '${{ github.event.inputs.release_branch }}'  # Uses input branch
+          ref: '${{ github.event.inputs.release_branch }}'
           fetch-depth: 2
 
       - name: 'Install Salesforce CLI'
@@ -37,20 +38,24 @@ jobs:
       - name: 'Authenticate Salesforce'
         run: |
           echo "${{ secrets.QA_SERVER_KEY }}" | tr -d '\r' > server.key
-          sf org login jwt --username "${{ secrets.QA_ADMIN_USER }}" --jwt-key-file server.key --client-id "${{ secrets.QA_CONSUMER_KEY}}" --instance-url "${{ secrets.QA_INSTANCE_URL }}" --set-default
+          sf org login jwt \
+            --username "${{ secrets.QA_ADMIN_USER }}" \
+            --jwt-key-file server.key \
+            --client-id "${{ secrets.QA_CONSUMER_KEY }}" \
+            --instance-url "${{ secrets.QA_INSTANCE_URL }}" \
+            --set-default
 
       - name: 'Create delta packages between main and input release branch'
         run: |
-           git fetch origin main
-           mkdir -p changed-sources
-           sf sgd source delta \
-           --to "refs/remotes/origin/${{ github.event.inputs.release_branch }}" \
-           --from "origin/main" \
-           --output "changed-sources" \
-           --generate-delta \
-           --source "force-app/main/default"
-           echo "[INFO] Delta created between origin/main and ${{ github.event.inputs.release_branch }}"
-
+          git fetch origin main
+          mkdir -p changed-sources
+          sf sgd source delta \
+            --to "refs/remotes/origin/${{ github.event.inputs.release_branch }}" \
+            --from "origin/main" \
+            --output "changed-sources" \
+            --generate-delta \
+            --source "force-app/main/default"
+          echo "[INFO] Delta created between origin/main and ${{ github.event.inputs.release_branch }}"
 
       - name: 'Extract Test Class Names'
         run: |
@@ -60,7 +65,7 @@ jobs:
               echo "No Test Classes Found. Skipping Tests."
               echo "TEST_CLASS_LIST=" >> $GITHUB_ENV
             else
-              TEST_CLASS_LIST=$(echo $TEST_CLASSES | tr '\n' ',' | sed 's/,$//')
+              TEST_CLASS_LIST=$(echo "$TEST_CLASSES" | tr '\n' ',' | sed 's/,$//')
               echo "TEST_CLASS_LIST=$TEST_CLASS_LIST" >> $GITHUB_ENV
               echo "Extracted Test Classes: $TEST_CLASS_LIST"
             fi
@@ -69,13 +74,14 @@ jobs:
             echo "TEST_CLASS_LIST=" >> $GITHUB_ENV
           fi
 
-     - name: 'Deploy to PROD with Extracted Test Classes'
+      - name: 'Deploy to PROD with Extracted Test Classes'
         run: |
-    sf project deploy start --source-dir changed-sources/force-app \
-      --test-level RunSpecifiedTests \
-      --tests $TEST_CLASS_LIST \
-      --wait 10 \
-      --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
+          sf project deploy start \
+            --source-dir changed-sources/force-app \
+            --test-level RunSpecifiedTests \
+            --tests $TEST_CLASS_LIST \
+            --wait 10 \
+            --json > result.json || echo "DEPLOY_FAILED=true" >> $GITHUB_ENV
 
       - name: 'Debug JSON Output'
         run: |
