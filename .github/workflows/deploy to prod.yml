@@ -37,7 +37,7 @@ jobs:
 
       - name: 'Authenticate Salesforce'
         run: |
-          echo "${{ secrets.QA_SERVER_KEY }}" | tr -d '\r' > server.key
+          echo "${{ secrets.JWT_SERVER_KEY }}" | tr -d '\r' > server.key
           sf org login jwt \
             --username "${{ secrets.QA_ADMIN_USER }}" \
             --jwt-key-file server.key \
