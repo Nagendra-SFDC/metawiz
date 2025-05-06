@@ -19,60 +19,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout the repository
+      - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Needed to access all branches
+          fetch-depth: 0  # Needed for accessing all branches
 
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Check if release branch exists
-        id: check_branch
+      - name: Ensure release branch exists
         run: |
-          if git ls-remote --exit-code --heads origin "${{ github.event.inputs.release_branch_name }}"; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+          RELEASE_BRANCH="${{ github.event.inputs.release_branch_name }}"
+          git fetch origin $RELEASE_BRANCH || git fetch origin main && git checkout -b "$RELEASE_BRANCH" origin/main && git push origin "$RELEASE_BRANCH"
 
-      - name: Create release branch if it doesn't exist
-        if: steps.check_branch.outputs.exists == 'false'
+      - name: Create and push consolidated branch
+        id: create_branch
         run: |
-          git fetch origin main
-          git checkout -b "${{ github.event.inputs.release_branch_name }}" origin/main
-          git push origin "${{ github.event.inputs.release_branch_name }}"
-
-      - name: Create consolidated branch and merge feature branches
-        run: |
-          git fetch --all
-
-          IFS=',' read -ra FEATURES <<< "${{ github.event.inputs.feature_branch_names }}"
+          FEATURE_BRANCHES="${{ github.event.inputs.feature_branch_names }}"
           RELEASE_BRANCH="${{ github.event.inputs.release_branch_name }}"
           TEMP_BRANCH="consolidated-pr-$(date +%s)"
 
-          # Create temporary branch from release branch
+          git fetch origin
           git checkout -b "$TEMP_BRANCH" "origin/$RELEASE_BRANCH"
 
-          # Merge each feature branch
+          IFS=',' read -ra FEATURES <<< "$FEATURE_BRANCHES"
           for FEATURE in "${FEATURES[@]}"; do
-            echo "Merging $FEATURE into $TEMP_BRANCH"
-            git merge "origin/$FEATURE" --no-edit || echo "Merge conflict in $FEATURE — needs manual resolution"
+            echo "Merging $FEATURE..."
+            git merge "origin/$FEATURE" --no-edit || echo "Warning: Merge conflict in $FEATURE"
           done
 
           git push origin "$TEMP_BRANCH"
+          echo "temp_branch=$TEMP_BRANCH" >> $GITHUB_OUTPUT
 
-      - name: Create pull request
+      - name: Create Pull Request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_BRANCH="${{ github.event.inputs.release_branch_name }}"
-          TEMP_BRANCH="consolidated-pr-$(git log -1 --format=%ct)"
-
           gh pr create \
-            --base "$RELEASE_BRANCH" \
-            --head "$TEMP_BRANCH" \
-            --title "Consolidated PR: Merge all features into $RELEASE_BRANCH" \
-            --body "This PR consolidates multiple feature branches into $RELEASE_BRANCH:\n\n${{ github.event.inputs.feature_branch_names }}"
+            --base "${{ github.event.inputs.release_branch_name }}" \
+            --head "${{ steps.create_branch.outputs.temp_branch }}" \
+            --title "Consolidated PR: Merge all features into ${{ github.event.inputs.release_branch_name }}" \
+            --body "This PR consolidates the following feature branches:\n${{ github.event.inputs.feature_branch_names }}"
