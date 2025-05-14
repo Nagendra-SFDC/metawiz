@@ -1,4 +1,4 @@
-name: Create Consolidated PR for Release
+name:  Consolidated 
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
         required: true
 
 jobs:
-  create_consolidated_pr:
+  create_consolidated_pr2:
     runs-on: ubuntu-latest
 
     steps:
