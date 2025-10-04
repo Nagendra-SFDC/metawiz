@@ -1,0 +1,83 @@
+name:  Consolidated 
+
+on:
+  workflow_dispatch:
+    inputs:
+      feature_branch_names:
+        description: 'Comma-separated list of feature branch names (e.g., feature/v.100,feature/v.101)'
+        required: true
+      release_branch_name:
+        description: 'Name of the release branch (e.g., release/v.105)'
+        required: true
+
+jobs:
+  create_consolidated_pr2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create temporary consolidated branch from release
+        run: |
+          RELEASE_BRANCH="${{ github.event.inputs.release_branch_name }}"
+          TEMP_BRANCH="consolidated-${RELEASE_BRANCH}-$(date +%s)"
+          git fetch origin
+          git checkout -b "$TEMP_BRANCH" "origin/$RELEASE_BRANCH"
+          echo "TEMP_BRANCH=$TEMP_BRANCH" >> $GITHUB_ENV
+
+      - name: Sequentially merge feature branches (skip on conflict)
+        id: merge_features
+        run: |
+          FEATURE_BRANCHES="${{ github.event.inputs.feature_branch_names }}"
+          IFS=',' read -ra FEATURES <<< "$FEATURE_BRANCHES"
+          SKIPPED_BRANCHES=()
+
+          for FEATURE in "${FEATURES[@]}"; do
+            echo "Merging $FEATURE into $TEMP_BRANCH..."
+            if git merge "origin/$FEATURE" --no-edit; then
+              echo "✅ Merged $FEATURE successfully."
+            else
+              echo "❌ Conflict detected in $FEATURE. Skipping..."
+              git merge --abort
+              SKIPPED_BRANCHES+=("$FEATURE")
+            fi
+          done
+
+          echo "SKIPPED_BRANCHES=${SKIPPED_BRANCHES[*]}" >> $GITHUB_ENV
+          echo "SKIPPED=${SKIPPED_BRANCHES[*]}" >> $GITHUB_OUTPUT
+
+      - name: Push consolidated branch
+        run: |
+          git push origin "$TEMP_BRANCH"
+
+      - name: Create Consolidated Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base "${{ github.event.inputs.release_branch_name }}" \
+            --head "$TEMP_BRANCH" \
+            --title "Consolidated PR: Merge features into ${{ github.event.inputs.release_branch_name }}" \
+            --body "This PR consolidates the following feature branches:\n\n${{ github.event.inputs.feature_branch_names }}"
+
+      - name: Create PRs for skipped/conflicted branches
+        if: steps.merge_features.outputs.SKIPPED != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for SKIPPED in ${{ steps.merge_features.outputs.SKIPPED }}; do
+            echo "Creating follow-up PR from $SKIPPED to $TEMP_BRANCH..."
+            gh pr create \
+              --base "$TEMP_BRANCH" \
+              --head "$SKIPPED" \
+              --title "Follow-up PR: Merge $SKIPPED into $TEMP_BRANCH (conflict resolution needed)" \
+              --body "This PR was created automatically for a branch that couldn't be merged cleanly into the consolidated branch. Please resolve the conflicts and complete the merge."
+          done
